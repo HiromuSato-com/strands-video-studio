@@ -1,0 +1,188 @@
+"""
+Video editing tools for the Strands Agent.
+All file operations use S3 as the storage backend.
+Temporary files are written to /tmp/ during processing.
+"""
+
+import os
+import json
+import uuid
+import logging
+import tempfile
+from pathlib import Path
+
+import boto3
+from strands import tool
+
+logger = logging.getLogger(__name__)
+
+# Environment variables injected at Fargate task launch
+S3_BUCKET = os.environ["S3_BUCKET"]
+TASK_ID = os.environ["TASK_ID"]
+
+s3 = boto3.client("s3")
+
+
+def _download_from_s3(key: str, suffix: str = "") -> str:
+    """Download a file from S3 to /tmp/ and return the local path."""
+    local_path = f"/tmp/{uuid.uuid4().hex}{suffix}"
+    s3.download_file(S3_BUCKET, key, local_path)
+    logger.info(f"Downloaded s3://{S3_BUCKET}/{key} → {local_path}")
+    return local_path
+
+
+def _upload_to_s3(local_path: str, filename: str) -> str:
+    """Upload a local file to S3 under tasks/{task_id}/output/ and return the S3 key."""
+    key = f"tasks/{TASK_ID}/output/{filename}"
+    s3.upload_file(local_path, S3_BUCKET, key)
+    logger.info(f"Uploaded {local_path} → s3://{S3_BUCKET}/{key}")
+    return key
+
+
+@tool
+def list_files() -> str:
+    """
+    List all input files available for this task.
+    Returns a JSON string with file metadata (key, size, filename).
+    """
+    prefix = f"tasks/{TASK_ID}/input/"
+    response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+    files = []
+    for obj in response.get("Contents", []):
+        files.append(
+            {
+                "key": obj["Key"],
+                "filename": Path(obj["Key"]).name,
+                "size_bytes": obj["Size"],
+            }
+        )
+    return json.dumps(files, ensure_ascii=False)
+
+
+@tool
+def trim_video(input_key: str, start_sec: float, end_sec: float) -> str:
+    """
+    Trim a video to the specified time range.
+
+    Args:
+        input_key: S3 key of the source video (e.g. "tasks/{task_id}/input/video.mp4")
+        start_sec: Start time in seconds
+        end_sec: End time in seconds
+
+    Returns:
+        S3 key of the trimmed output video
+    """
+    from moviepy import VideoFileClip
+
+    suffix = Path(input_key).suffix or ".mp4"
+    local_input = _download_from_s3(input_key, suffix)
+
+    output_filename = f"trimmed_{Path(input_key).name}"
+    local_output = f"/tmp/{uuid.uuid4().hex}{suffix}"
+
+    try:
+        with VideoFileClip(local_input) as clip:
+            trimmed = clip.subclipped(start_sec, end_sec)
+            trimmed.write_videofile(local_output, logger=None)
+
+        output_key = _upload_to_s3(local_output, output_filename)
+        return json.dumps({"output_key": output_key, "status": "success"})
+    finally:
+        for path in [local_input, local_output]:
+            if os.path.exists(path):
+                os.remove(path)
+
+
+@tool
+def insert_image(video_key: str, image_key: str, start_sec: float, end_sec: float) -> str:
+    """
+    Insert (overlay) an image into a video for a specified time range.
+    The image is displayed as a full-frame overlay replacing the video frames.
+
+    Args:
+        video_key: S3 key of the source video
+        image_key: S3 key of the image to insert
+        start_sec: Start time in seconds where the image appears
+        end_sec: End time in seconds where the image disappears
+
+    Returns:
+        S3 key of the output video with the image inserted
+    """
+    from moviepy import VideoFileClip, ImageClip, concatenate_videoclips
+
+    video_suffix = Path(video_key).suffix or ".mp4"
+    local_video = _download_from_s3(video_key, video_suffix)
+
+    image_suffix = Path(image_key).suffix or ".jpg"
+    local_image = _download_from_s3(image_key, image_suffix)
+
+    output_filename = f"with_image_{Path(video_key).name}"
+    local_output = f"/tmp/{uuid.uuid4().hex}{video_suffix}"
+
+    try:
+        with VideoFileClip(local_video) as video:
+            duration = video.duration
+            w, h = video.size
+
+            # Build: [before] + [image clip] + [after]
+            segments = []
+            if start_sec > 0:
+                segments.append(video.subclipped(0, start_sec))
+
+            image_duration = end_sec - start_sec
+            img_clip = (
+                ImageClip(local_image)
+                .resized((w, h))
+                .with_duration(image_duration)
+                .with_fps(video.fps)
+            )
+            segments.append(img_clip)
+
+            if end_sec < duration:
+                segments.append(video.subclipped(end_sec, duration))
+
+            final = concatenate_videoclips(segments)
+            final.write_videofile(local_output, logger=None)
+
+        output_key = _upload_to_s3(local_output, output_filename)
+        return json.dumps({"output_key": output_key, "status": "success"})
+    finally:
+        for path in [local_video, local_image, local_output]:
+            if os.path.exists(path):
+                os.remove(path)
+
+
+@tool
+def concat_videos(input_keys: list[str]) -> str:
+    """
+    Concatenate multiple videos into a single output video.
+
+    Args:
+        input_keys: List of S3 keys of the videos to concatenate, in order
+
+    Returns:
+        S3 key of the concatenated output video
+    """
+    from moviepy import VideoFileClip, concatenate_videoclips
+
+    local_paths = []
+    for key in input_keys:
+        suffix = Path(key).suffix or ".mp4"
+        local_paths.append(_download_from_s3(key, suffix))
+
+    output_filename = "concatenated.mp4"
+    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
+
+    try:
+        clips = [VideoFileClip(p) for p in local_paths]
+        final = concatenate_videoclips(clips)
+        final.write_videofile(local_output, logger=None)
+        for clip in clips:
+            clip.close()
+
+        output_key = _upload_to_s3(local_output, output_filename)
+        return json.dumps({"output_key": output_key, "status": "success"})
+    finally:
+        for path in local_paths + [local_output]:
+            if os.path.exists(path):
+                os.remove(path)

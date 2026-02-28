@@ -1,0 +1,28 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.python-version
+
+# Node
+node_modules/
+frontend/dist/
+
+# Terraform
+infrastructure/.terraform/
+infrastructure/.terraform.lock.hcl
+infrastructure/terraform.tfstate
+infrastructure/terraform.tfstate.backup
+infrastructure/.lambda_zips/
+infrastructure/terraform.tfvars
+
+# Env files
+.env
+.env.local
+frontend/.env
+frontend/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
