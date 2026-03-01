@@ -2,6 +2,24 @@
 
 AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × AWS ECS Fargate
 
+## UIはこんな感じです
+
+![UI スクリーンショット](docs/images/ui-screenshot.png)
+
+## 生成動画サンプル
+
+**Luma AI Ray 2** — 不死鳥が東京タワーのてっぺんを舞う
+
+[▶ ダウンロード / 再生](docs/videos/ray2_generated.mp4)
+
+**Amazon Nova Reel** — 夕焼けの富士山
+
+[▶ ダウンロード / 再生](docs/videos/nova_generated.mp4)
+
+> GitHubでは動画ファイルのリンクをクリック → **View raw** で再生できます。
+
+---
+
 ## アーキテクチャ
 
 ```
