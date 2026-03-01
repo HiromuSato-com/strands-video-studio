@@ -147,7 +147,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 resource "aws_security_group" "ecs_tasks" {
   name        = "${var.project_name}-ecs-tasks"
   description = "Allow outbound HTTPS for ECS Fargate tasks"
-  vpc_id      = var.vpc_id
+  vpc_id      = aws_vpc.main.id
 
   egress {
     from_port   = 443

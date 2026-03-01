@@ -16,14 +16,10 @@ variable "project_name" {
   default     = "video-edit"
 }
 
-variable "vpc_id" {
-  description = "VPC ID for ECS Fargate tasks"
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
   type        = string
-}
-
-variable "subnet_ids" {
-  description = "Subnet IDs for ECS Fargate tasks (comma-separated)"
-  type        = list(string)
+  default     = "10.0.0.0/16"
 }
 
 variable "bedrock_region" {

@@ -1,3 +1,13 @@
+output "vpc_id" {
+  description = "VPC ID"
+  value       = aws_vpc.main.id
+}
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs for ECS Fargate"
+  value       = aws_subnet.public[*].id
+}
+
 output "frontend_url" {
   description = "CloudFront URL for the frontend"
   value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
