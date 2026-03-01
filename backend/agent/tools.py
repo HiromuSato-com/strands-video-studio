@@ -7,8 +7,8 @@ Temporary files are written to /tmp/ during processing.
 import os
 import json
 import uuid
+import random
 import logging
-import tempfile
 from pathlib import Path
 
 import time
@@ -203,34 +203,38 @@ def concat_videos(input_keys: list[str]) -> str:
 @tool
 def generate_video(
     prompt: str,
-    duration: str = "5s",
-    aspect_ratio: str = "16:9",
-    resolution: str = "720p",
+    duration_seconds: int = 6,
+    dimension: str = "1280x720",
 ) -> str:
     """
-    Generate a video from a text prompt using Luma AI Ray 2 on Amazon Bedrock.
+    Generate a video from a text prompt using Amazon Nova Reel on Amazon Bedrock.
 
     Args:
-        prompt: Text description of the video to generate (1–5000 characters)
-        duration: Video length, either "5s" or "9s" (default: "5s")
-        aspect_ratio: Aspect ratio — "16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21" (default: "16:9")
-        resolution: Output resolution, either "540p" or "720p" (default: "720p")
+        prompt: Text description of the video to generate (1–512 characters)
+        duration_seconds: Video length in seconds, either 6 or 12 (default: 6)
+        dimension: Output resolution — "1280x720" (landscape) or "720x1280" (portrait) (default: "1280x720")
 
     Returns:
         S3 key of the generated output video
     """
     bedrock_output_prefix = f"s3://{S3_BUCKET}/tasks/{TASK_ID}/bedrock-output"
 
-    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration}")
+    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration_seconds}s")
+
+    model_input = {
+        "taskType": "TEXT_VIDEO",
+        "textToVideoParams": {"text": prompt},
+        "videoGenerationConfig": {
+            "fps": 24,
+            "durationSeconds": duration_seconds,
+            "dimension": dimension,
+            "seed": random.randint(0, 2147483646),
+        },
+    }
 
     response = bedrock.start_async_invoke(
-        modelId="luma.ray-v2:0",
-        modelInput={
-            "prompt": prompt,
-            "duration": duration,
-            "aspect_ratio": aspect_ratio,
-            "resolution": resolution,
-        },
+        modelId="amazon.nova-reel-v1:1",
+        modelInput=model_input,
         outputDataConfig={
             "s3OutputDataConfig": {"s3Uri": bedrock_output_prefix}
         },
@@ -260,7 +264,6 @@ def generate_video(
     invocation_id = invocation_arn.split("/")[-1]
     bedrock_key = f"tasks/{TASK_ID}/bedrock-output/{invocation_id}/output.mp4"
 
-    output_key = _upload_to_s3.__wrapped__ if hasattr(_upload_to_s3, "__wrapped__") else None
     # Copy from Bedrock output location to canonical output path
     output_filename = "generated.mp4"
     local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
