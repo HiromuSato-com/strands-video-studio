@@ -16,6 +16,7 @@ infrastructure/terraform.tfstate
 infrastructure/terraform.tfstate.backup
 infrastructure/.lambda_zips/
 infrastructure/terraform.tfvars
+infrastructure/tfplan
 
 # Env files
 .env
