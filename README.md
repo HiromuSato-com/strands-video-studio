@@ -20,15 +20,20 @@ ECS Fargate (Strands Agent)
   ├─ MoviePy + ffmpeg による動画編集
   ├─ Luma AI Ray 2 (us-west-2) による AI 動画生成
   │    └─ Oregon S3 (luma-output) → Tokyo S3 (assets) にクロスリージョン転送
+  ├─ Amazon Nova Reel (us-east-1) による AI 動画生成
+  │    └─ N.Virginia S3 (nova-reel-output) → Tokyo S3 (assets) にクロスリージョン転送
   └─ 処理結果を S3 / DynamoDB に書き込み
 
 フロントエンド配信
   CloudFront → S3 (静的サイト)
 
 S3 バケット構成
-  ├─ video-edit-assets-{account}   (ap-northeast-1) — 入出力ファイル・最終動画
-  ├─ video-edit-frontend-{account} (ap-northeast-1) — React 静的ファイル
-  └─ video-edit-luma-{account}     (us-west-2)      — Luma AI 生成中間ファイル
+  ├─ video-edit-assets-{account}               (ap-northeast-1) — 入出力ファイル・最終動画
+  ├─ video-edit-frontend-{account}             (ap-northeast-1) — React 静的ファイル
+  ├─ bedrock-video-generation-us-west-2-{id}   (us-west-2)      — Luma AI 生成中間ファイル
+  │    ※ Bedrock コンソールで Luma AI Ray 2 を有効化した際に AWS が自動作成
+  └─ bedrock-video-generation-us-east-1-{id}   (us-east-1)      — Nova Reel 生成中間ファイル
+       ※ Bedrock コンソールで Amazon Nova Reel を有効化した際に AWS が自動作成
 ```
 
 ## 前提条件
@@ -38,9 +43,14 @@ S3 バケット構成
 - Node.js >= 20（フロントエンドビルド）
 - Amazon Bedrock で以下のモデルを有効化済み:
   - `us.anthropic.claude-sonnet-4-6` — **us-east-1**（LLM エージェント）
-  - `luma.ray-v2:0` — **us-west-2**（AI 動画生成）
+  - `luma.ray-v2:0` — **us-west-2**（AI 動画生成 / Luma AI Ray 2）
     > Bedrock コンソール (us-west-2) で有効化する際、S3 バケットの作成を求めるダイアログが表示されます。
-    > 「確認」をクリックして専用バケットを作成してください（Terraform で `video-edit-luma-{account}` を別途作成するため、コンソール作成バケットは不要です）。
+    > 「確認」をクリックして AWS が自動作成するバケット（`bedrock-video-generation-us-west-2-{id}`）をそのまま使用します。
+    > 作成されたバケット名を `infrastructure/variables.tf` の `luma_s3_bucket_name` に設定してください。
+  - `amazon.nova-reel-v1:0` — **us-east-1**（AI 動画生成 / Amazon Nova Reel）
+    > Bedrock コンソール (us-east-1) で有効化する際、同様に S3 バケットの作成を求めるダイアログが表示されます。
+    > 「確認」をクリックして AWS が自動作成するバケット（`bedrock-video-generation-us-east-1-{id}`）をそのまま使用します。
+    > 作成されたバケット名を `infrastructure/variables.tf` の `nova_reel_s3_bucket_name` に設定してください。
 
 ## デプロイ手順
 
@@ -52,7 +62,9 @@ terraform init
 terraform apply
 ```
 
-VPC・サブネット・S3 バケット（Tokyo + Oregon）・IAM・Lambda・ECS・CloudFront がすべて自動作成されます。
+VPC・サブネット・S3 バケット（Tokyo）・IAM・Lambda・ECS・CloudFront が自動作成されます。
+Luma AI / Nova Reel の出力バケットは Bedrock コンソールで各モデルを有効化した際に AWS が自動作成します。
+バケット名を `variables.tf` の `luma_s3_bucket_name` / `nova_reel_s3_bucket_name` に設定してから `apply` を実行してください。
 
 `terraform output` で以下の値を確認する：
 
@@ -63,6 +75,7 @@ VPC・サブネット・S3 バケット（Tokyo + Oregon）・IAM・Lambda・ECS
 | `frontend_url` | アプリの公開 URL |
 | `s3_bucket` | アセット S3 バケット名（ap-northeast-1） |
 | `luma_output_bucket` | Luma AI 出力バケット名（us-west-2） |
+| `nova_reel_output_bucket` | Nova Reel 出力バケット名（us-east-1） |
 | `vpc_id` | 作成された VPC の ID |
 | `public_subnet_ids` | Fargate タスク用パブリックサブネット ID |
 
@@ -119,8 +132,9 @@ aws s3 sync dist/ s3://$FRONTEND_BUCKET/ \
 1. `frontend_url` をブラウザで開く
 2. 動画ファイル（MP4 等）や画像ファイルをドラッグ＆ドロップでアップロード（複数可、追加式）
 3. 自然言語で編集指示または生成指示を入力
-4. 「編集を開始」をクリック
-5. Fargate でエージェントが起動し、処理が完了するとプレビューとダウンロードが表示される
+4. AI 動画生成モデルを選択（Luma AI Ray 2 / Amazon Nova Reel）
+5. 「編集を開始」をクリック
+6. Fargate でエージェントが起動し、処理が完了するとプレビューとダウンロードが表示される
 
 ### 指示例（動画編集）
 
@@ -159,8 +173,9 @@ video1.mp4 と video2.mp4 を結合して
 | `insert_image` | 動画の指定時間範囲に画像を挿入 |
 | `concat_videos` | 複数動画を順番に結合 |
 | `generate_video` | テキストプロンプトから AI 動画を生成（Luma AI Ray 2） |
+| `generate_video_nova_reel` | テキストプロンプトから AI 動画を生成（Amazon Nova Reel） |
 
-### generate_video パラメータ
+### generate_video パラメータ（Luma AI Ray 2）
 
 | パラメータ | 説明 | デフォルト |
 |-----------|------|-----------|
@@ -168,6 +183,13 @@ video1.mp4 と video2.mp4 を結合して
 | `duration` | 長さ: `"5s"` または `"9s"` | `"5s"` |
 | `aspect_ratio` | アスペクト比: `"16:9"`, `"9:16"`, `"1:1"` など | `"16:9"` |
 | `resolution` | 解像度: `"720p"` または `"540p"` | `"720p"` |
+
+### generate_video_nova_reel パラメータ（Amazon Nova Reel）
+
+| パラメータ | 説明 | デフォルト |
+|-----------|------|-----------|
+| `prompt` | 生成する動画の説明（最大 512 文字） | — |
+| `duration_sec` | 長さ（秒）: 1〜6 の整数。解像度は 1280×720 固定 | `6` |
 
 ---
 
@@ -190,4 +212,7 @@ terraform destroy
 ```
 
 > **注意**: S3 バケットにオブジェクトが残っている場合は先に手動削除が必要です。
-> 削除対象バケット: `video-edit-assets-{account}`, `video-edit-frontend-{account}`, `video-edit-luma-{account}`
+> 削除対象バケット: `video-edit-assets-{account}`, `video-edit-frontend-{account}`
+>
+> `bedrock-video-generation-us-west-2-{id}` および `bedrock-video-generation-us-east-1-{id}` は
+> AWS が管理するバケットのため、Terraform では削除されません。不要な場合は AWS コンソールから手動削除してください。
