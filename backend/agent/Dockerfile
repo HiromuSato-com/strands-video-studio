@@ -1,8 +1,7 @@
 FROM python:3.13-slim
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=mwader/static-ffmpeg:latest /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 
 WORKDIR /app
 

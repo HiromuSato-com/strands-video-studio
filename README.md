@@ -37,14 +37,12 @@ ECS Fargate (Strands Agent)
 
 ```bash
 cd infrastructure
-
-# tfvars を編集（VPC ID / Subnet IDs を自分の環境に合わせる）
-cp terraform.tfvars.example terraform.tfvars
-vi terraform.tfvars
-
 terraform init
 terraform apply
 ```
+
+VPC・サブネットも Terraform で自動作成されます（デフォルト CIDR: `10.0.0.0/16`）。
+変更したい場合は `terraform.tfvars` に `vpc_cidr = "..."` を追加してください。
 
 `terraform output` で以下の値を確認する：
 
@@ -54,6 +52,8 @@ terraform apply
 | `api_url` | フロントエンドの `VITE_API_URL` |
 | `frontend_url` | アプリの公開 URL |
 | `s3_bucket` | アセット S3 バケット名 |
+| `vpc_id` | 作成された VPC の ID |
+| `public_subnet_ids` | Fargate タスク用パブリックサブネット ID |
 
 ---
 
@@ -67,7 +67,12 @@ AWS_PROFILE=<your-profile>
 aws ecr get-login-password --region $AWS_REGION --profile $AWS_PROFILE \
   | docker login --username AWS --password-stdin $ECR_URL
 
-docker build -t video-edit-agent ./backend/agent
+# プロキシ環境の場合は --build-arg でプロキシを無効化
+docker build \
+  --build-arg http_proxy="" --build-arg https_proxy="" \
+  --build-arg HTTP_PROXY="" --build-arg HTTPS_PROXY="" \
+  -t video-edit-agent ./backend/agent
+
 docker tag video-edit-agent:latest $ECR_URL:latest
 docker push $ECR_URL:latest
 ```
