@@ -40,8 +40,6 @@ def handler(event, context):
         return error_response(400, "task_id is required")
     if not instruction:
         return error_response(400, "instruction is required")
-    if not input_keys:
-        return error_response(400, "input_keys must not be empty")
     now = datetime.now(timezone.utc).isoformat()
 
     # Write PENDING record to DynamoDB
