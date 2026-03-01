@@ -56,10 +56,6 @@ export default function App() {
   }
 
   const handleSubmit = async () => {
-    if (files.length === 0) {
-      setSubmitError("ファイルを選択してください");
-      return;
-    }
     if (!instruction.trim()) {
       setSubmitError("編集指示を入力してください");
       return;

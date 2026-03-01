@@ -97,6 +97,9 @@ export function UploadZone({ onFilesSelected, disabled }: Props) {
         <p className="text-xs text-gray-400 mt-2">
           対応形式: MP4, MOV, AVI, WebM, JPG, PNG, GIF, WebP
         </p>
+        <p className="text-xs text-blue-400 mt-1">
+          ファイルなしでも動画生成（AI テキスト→動画）が可能です
+        </p>
         <input
           ref={inputRef}
           type="file"

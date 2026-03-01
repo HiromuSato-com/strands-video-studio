@@ -11,6 +11,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+import time
+
 import boto3
 from strands import tool
 
@@ -21,6 +23,7 @@ S3_BUCKET = os.environ["S3_BUCKET"]
 TASK_ID = os.environ["TASK_ID"]
 
 s3 = boto3.client("s3")
+bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
 # Tracks the most recent output S3 key produced by any tool call
 _last_output_key: str | None = None
@@ -195,3 +198,78 @@ def concat_videos(input_keys: list[str]) -> str:
         for path in local_paths + [local_output]:
             if os.path.exists(path):
                 os.remove(path)
+
+
+@tool
+def generate_video(
+    prompt: str,
+    duration: str = "5s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p",
+) -> str:
+    """
+    Generate a video from a text prompt using Luma AI Ray 2 on Amazon Bedrock.
+
+    Args:
+        prompt: Text description of the video to generate (1–5000 characters)
+        duration: Video length, either "5s" or "9s" (default: "5s")
+        aspect_ratio: Aspect ratio — "16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21" (default: "16:9")
+        resolution: Output resolution, either "540p" or "720p" (default: "720p")
+
+    Returns:
+        S3 key of the generated output video
+    """
+    bedrock_output_prefix = f"s3://{S3_BUCKET}/tasks/{TASK_ID}/bedrock-output"
+
+    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration}")
+
+    response = bedrock.start_async_invoke(
+        modelId="luma.ray-v2:0",
+        modelInput={
+            "prompt": prompt,
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+        },
+        outputDataConfig={
+            "s3OutputDataConfig": {"s3Uri": bedrock_output_prefix}
+        },
+    )
+    invocation_arn = response["invocationArn"]
+    logger.info(f"Bedrock async invoke started: {invocation_arn}")
+
+    # Poll until completed or failed (timeout: 15 minutes)
+    timeout_sec = 900
+    poll_interval = 15
+    elapsed = 0
+    while elapsed < timeout_sec:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        status_resp = bedrock.get_async_invoke(invocationArn=invocation_arn)
+        status = status_resp["status"]
+        logger.info(f"Bedrock job status: {status} (elapsed {elapsed}s)")
+        if status == "Completed":
+            break
+        if status == "Failed":
+            failure = status_resp.get("failureMessage", "unknown error")
+            return json.dumps({"status": "failed", "error": failure})
+    else:
+        return json.dumps({"status": "failed", "error": "Timeout waiting for video generation"})
+
+    # Bedrock saves output under {prefix}/{invocation_id}/output.mp4
+    invocation_id = invocation_arn.split("/")[-1]
+    bedrock_key = f"tasks/{TASK_ID}/bedrock-output/{invocation_id}/output.mp4"
+
+    output_key = _upload_to_s3.__wrapped__ if hasattr(_upload_to_s3, "__wrapped__") else None
+    # Copy from Bedrock output location to canonical output path
+    output_filename = "generated.mp4"
+    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
+    try:
+        s3.download_file(S3_BUCKET, bedrock_key, local_output)
+        output_key = _upload_to_s3(local_output, output_filename)
+    finally:
+        if os.path.exists(local_output):
+            os.remove(local_output)
+
+    logger.info(f"Video generation complete: {output_key}")
+    return json.dumps({"output_key": output_key, "status": "success"})

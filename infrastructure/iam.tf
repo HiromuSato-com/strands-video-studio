@@ -44,6 +44,8 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Action = [
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
+          "bedrock:StartAsyncInvoke",
+          "bedrock:GetAsyncInvoke",
         ]
         Resource = "*"
       },
