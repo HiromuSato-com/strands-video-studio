@@ -47,12 +47,14 @@ export async function uploadFileToS3(
 export async function createTask(
   taskId: string,
   instruction: string,
-  inputKeys: string[]
+  inputKeys: string[],
+  videoModel: "luma" | "nova_reel" = "luma"
 ): Promise<CreateTaskResponse> {
   const { data } = await api.post<CreateTaskResponse>("/tasks", {
     task_id: taskId,
     instruction,
     input_keys: inputKeys,
+    video_model: videoModel,
   });
   return data;
 }

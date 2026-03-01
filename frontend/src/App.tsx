@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Film, PenLine, Activity, Sparkles, Palette, Loader } from "lucide-react";
+import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
 import { TaskStatus } from "./components/TaskStatus";
@@ -15,6 +15,7 @@ import {
 } from "./api/client";
 
 type AppStep = "idle" | "uploading" | "submitted";
+type VideoModel = "luma" | "nova_reel";
 
 interface UploadProgress {
   filename: string;
@@ -51,6 +52,7 @@ const STEP_LABELS = [
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [instruction, setInstruction] = useState("");
+  const [videoModel, setVideoModel] = useState<VideoModel>("luma");
   const [step, setStep] = useState<AppStep>("idle");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
@@ -112,7 +114,7 @@ export default function App() {
         })
       );
 
-      const { task_id } = await createTask(newTaskId, instruction, inputKeys);
+      const { task_id } = await createTask(newTaskId, instruction, inputKeys, videoModel);
       setTaskId(task_id);
       setStep("submitted");
     } catch (e) {
@@ -126,6 +128,7 @@ export default function App() {
   const handleReset = () => {
     setFiles([]);
     setInstruction("");
+    setVideoModel("luma");
     setStep("idle");
     setTaskId(null);
     setUploadProgress([]);
@@ -177,6 +180,45 @@ export default function App() {
               onChange={setInstruction}
               disabled={isProcessing}
             />
+
+            {/* AI Video Generation Model Selector */}
+            <div className="mt-3">
+              <p className="text-xs text-violet-400 mb-2 flex items-center gap-1">
+                <Clapperboard size={11} />
+                AI動画生成モデル（動画生成指示の場合に使用）
+              </p>
+              <div className="flex gap-2">
+                {(
+                  [
+                    {
+                      value: "luma" as VideoModel,
+                      label: "Luma AI Ray 2",
+                      desc: "5s / 9s · 多彩なアスペクト比",
+                    },
+                    {
+                      value: "nova_reel" as VideoModel,
+                      label: "Amazon Nova Reel",
+                      desc: "最大6s · 1280×720固定",
+                    },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => setVideoModel(m.value)}
+                    className={`flex-1 text-left px-3 py-2 rounded-xl border text-xs transition-all ${
+                      videoModel === m.value
+                        ? "border-violet-400 bg-violet-50 text-violet-700"
+                        : "border-lavender-200 bg-white/60 text-violet-400 hover:border-violet-300"
+                    } ${isProcessing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <span className="font-semibold block">{m.label}</span>
+                    <span className="text-[10px] opacity-70">{m.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
 
           {/* Upload progress */}

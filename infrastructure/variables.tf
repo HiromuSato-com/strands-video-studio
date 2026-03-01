@@ -27,3 +27,15 @@ variable "bedrock_region" {
   type        = string
   default     = "us-east-1"
 }
+
+variable "luma_s3_bucket_name" {
+  description = "Existing S3 bucket name (us-west-2) created by Bedrock console for Luma AI Ray 2 output"
+  type        = string
+  default     = "bedrock-video-generation-us-west-2-7rfhed"
+}
+
+variable "nova_reel_s3_bucket_name" {
+  description = "Existing S3 bucket name (us-east-1) created by Bedrock console for Amazon Nova Reel output"
+  type        = string
+  default     = "bedrock-video-generation-us-east-1-eynjzo"
+}

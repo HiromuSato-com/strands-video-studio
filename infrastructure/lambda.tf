@@ -66,7 +66,8 @@ resource "aws_lambda_function" "create_task" {
       ECS_SUBNET_IDS        = join(",", aws_subnet.public[*].id)
       ECS_SECURITY_GROUP_ID = aws_security_group.ecs_tasks.id
       CONTAINER_NAME        = "video-edit-agent"
-      LUMA_S3_BUCKET        = aws_s3_bucket.luma_output.bucket
+      LUMA_S3_BUCKET        = data.aws_s3_bucket.luma_output.bucket
+      NOVA_REEL_S3_BUCKET   = data.aws_s3_bucket.nova_reel_output.bucket
     })
   }
 

@@ -22,13 +22,15 @@ logger = logging.getLogger(__name__)
 S3_BUCKET = os.environ["S3_BUCKET"]
 TASK_ID = os.environ["TASK_ID"]
 LUMA_S3_BUCKET = os.environ.get("LUMA_S3_BUCKET", "")
+NOVA_REEL_S3_BUCKET = os.environ.get("NOVA_REEL_S3_BUCKET", "")
 
 s3 = boto3.client("s3")
 # Luma AI Ray 2 is only available in us-west-2 (Oregon)
 bedrock_luma = boto3.client("bedrock-runtime", region_name="us-west-2")
 s3_luma = boto3.client("s3", region_name="us-west-2")
-# Nova Reel (ap-northeast-1) kept as fallback for non-Luma models
-bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
+# Amazon Nova Reel is available in us-east-1
+bedrock_nova = boto3.client("bedrock-runtime", region_name="us-east-1")
+s3_nova = boto3.client("s3", region_name="us-east-1")
 
 # Tracks the most recent output S3 key produced by any tool call
 _last_output_key: str | None = None
@@ -228,6 +230,26 @@ def generate_video(
     if not LUMA_S3_BUCKET:
         return json.dumps({"status": "failed", "error": "LUMA_S3_BUCKET env var not set"})
 
+    # Clamp to valid values ("5s" or "9s")
+    if duration not in ("5s", "9s"):
+        try:
+            sec = float(duration.rstrip("s"))
+        except ValueError:
+            sec = 0
+        duration = "9s" if sec >= 7 else "5s"
+        logger.info(f"duration adjusted to {duration}")
+
+    # Clamp resolution to valid values
+    if resolution not in ("720p", "540p"):
+        resolution = "720p"
+        logger.info(f"resolution adjusted to 720p")
+
+    # Clamp aspect_ratio to valid values
+    valid_ratios = {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"}
+    if aspect_ratio not in valid_ratios:
+        aspect_ratio = "16:9"
+        logger.info(f"aspect_ratio adjusted to 16:9")
+
     # Luma AI output must go to us-west-2 bucket (same region as the model)
     luma_output_prefix = f"s3://{LUMA_S3_BUCKET}/tasks/{TASK_ID}/output/"
 
@@ -289,4 +311,93 @@ def generate_video(
             os.remove(local_output)
 
     logger.info(f"Video generation complete. Copied to Tokyo: {output_key}")
+    return json.dumps({"output_key": output_key, "status": "success"})
+
+
+@tool
+def generate_video_nova_reel(
+    prompt: str,
+    duration_sec: int = 6,
+) -> str:
+    """
+    Generate a video from a text prompt using Amazon Nova Reel on Amazon Bedrock (us-east-1).
+    Output resolution is fixed at 1280x720 (16:9). Supports up to 6 seconds.
+
+    Args:
+        prompt: Text description of the video to generate (up to 512 characters)
+        duration_sec: Video length in seconds (1-6, default 6)
+
+    Returns:
+        S3 key of the generated output video (in the main Tokyo bucket)
+    """
+    if not NOVA_REEL_S3_BUCKET:
+        return json.dumps({"status": "failed", "error": "NOVA_REEL_S3_BUCKET env var not set"})
+
+    # Clamp duration to valid range
+    duration_sec = max(1, min(6, int(duration_sec)))
+
+    # Nova Reel output must go to us-east-1 bucket (same region as the model)
+    nova_output_prefix = f"s3://{NOVA_REEL_S3_BUCKET}/tasks/{TASK_ID}/output/"
+
+    logger.info(
+        f"Starting Nova Reel video generation: prompt='{prompt[:80]}' duration={duration_sec}s"
+    )
+
+    try:
+        response = bedrock_nova.start_async_invoke(
+            modelId="amazon.nova-reel-v1:0",
+            modelInput={
+                "taskType": "TEXT_VIDEO",
+                "textToVideoParams": {"text": prompt},
+                "videoGenerationConfig": {
+                    "durationSeconds": duration_sec,
+                    "fps": 24,
+                    "dimension": "1280x720",
+                    "seed": random.randint(0, 2147483647),
+                },
+            },
+            outputDataConfig={
+                "s3OutputDataConfig": {"s3Uri": nova_output_prefix}
+            },
+        )
+    except Exception as e:
+        logger.error(f"Nova Reel start_async_invoke failed: {type(e).__name__}: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+
+    invocation_arn = response["invocationArn"]
+    logger.info(f"Nova Reel async invoke started: {invocation_arn}")
+
+    # Poll until completed or failed (timeout: 15 minutes)
+    timeout_sec = 900
+    poll_interval = 15
+    elapsed = 0
+    while elapsed < timeout_sec:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        status_resp = bedrock_nova.get_async_invoke(invocationArn=invocation_arn)
+        status = status_resp["status"]
+        logger.info(f"Nova Reel job status: {status} (elapsed {elapsed}s)")
+        if status == "Completed":
+            break
+        if status == "Failed":
+            failure = status_resp.get("failureMessage", "unknown error")
+            return json.dumps({"status": "failed", "error": failure})
+    else:
+        return json.dumps({"status": "failed", "error": "Timeout waiting for Nova Reel video generation"})
+
+    # Nova Reel writes output to {prefix}{invocation_id}/output.mp4
+    invocation_id = invocation_arn.split("/")[-1]
+    nova_key = f"tasks/{TASK_ID}/output/{invocation_id}/output.mp4"
+
+    # Download from N. Virginia (us-east-1) and re-upload to Tokyo (ap-northeast-1)
+    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
+    try:
+        logger.info(f"Downloading from N. Virginia bucket: s3://{NOVA_REEL_S3_BUCKET}/{nova_key}")
+        s3_nova.download_file(NOVA_REEL_S3_BUCKET, nova_key, local_output)
+        output_key = _upload_to_s3(local_output, "nova_generated.mp4")
+    finally:
+        if os.path.exists(local_output):
+            os.remove(local_output)
+
+    logger.info(f"Nova Reel generation complete. Copied to Tokyo: {output_key}")
     return json.dumps({"output_key": output_key, "status": "success"})

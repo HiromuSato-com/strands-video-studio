@@ -50,6 +50,13 @@ def main() -> None:
     task_id = get_env("TASK_ID")
     dynamodb_table_name = get_env("DYNAMODB_TABLE")
     instruction = get_env("INSTRUCTION")
+    video_model = os.environ.get("VIDEO_MODEL", "luma")
+
+    # Append model hint so the agent picks the correct generation tool
+    if video_model == "nova_reel":
+        instruction += "\n[AI動画生成モデル: Amazon Nova Reel]"
+    else:
+        instruction += "\n[AI動画生成モデル: Luma AI Ray 2]"
 
     dynamodb = boto3.resource("dynamodb")
     table = dynamodb.Table(dynamodb_table_name)
@@ -69,11 +76,24 @@ def main() -> None:
         output_key = get_last_output_key()
         logger.info(f"output_key from tools: {output_key}")
 
-        update_kwargs = {"status": "COMPLETED", "agent_result": result_text[:4000]}
-        if output_key:
-            update_kwargs["output_key"] = output_key
+        if not output_key:
+            logger.error(f"Task {task_id}: agent completed but produced no output file")
+            update_task_status(
+                table,
+                task_id,
+                status="FAILED",
+                error_message="Agent completed but produced no output file. Check agent_result for details.",
+                agent_result=result_text[:4000],
+            )
+            return
 
-        update_task_status(table, task_id, **update_kwargs)
+        update_task_status(
+            table,
+            task_id,
+            status="COMPLETED",
+            output_key=output_key,
+            agent_result=result_text[:4000],
+        )
         logger.info(f"Task {task_id} completed. output_key={output_key}")
 
     except Exception as e:

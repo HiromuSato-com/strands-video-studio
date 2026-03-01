@@ -24,5 +24,12 @@ provider "aws" {
   profile = var.aws_profile
 }
 
+# N. Virginia provider for Amazon Nova Reel (only available in us-east-1)
+provider "aws" {
+  alias   = "useast1"
+  region  = "us-east-1"
+  profile = var.aws_profile
+}
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
