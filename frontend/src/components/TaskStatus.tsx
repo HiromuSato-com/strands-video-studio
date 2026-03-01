@@ -1,3 +1,4 @@
+import { Clock, Loader, CheckCircle, XCircle } from "lucide-react";
 import type { Task } from "../types";
 
 interface Props {
@@ -7,32 +8,36 @@ interface Props {
 
 const STATUS_CONFIG = {
   PENDING: {
-    icon: "⏳",
+    Icon: Clock,
     label: "準備中",
-    color: "text-yellow-600",
-    bg: "bg-yellow-50 border-yellow-200",
-    showSpinner: false,
+    color: "text-amber-500",
+    bg: "bg-amber-50 border-amber-200",
+    iconClass: "text-amber-400",
+    spin: false,
   },
   RUNNING: {
-    icon: "⚙️",
+    Icon: Loader,
     label: "処理中",
-    color: "text-blue-600",
-    bg: "bg-blue-50 border-blue-200",
-    showSpinner: true,
+    color: "text-violet-600",
+    bg: "bg-violet-50 border-violet-200",
+    iconClass: "text-violet-400",
+    spin: true,
   },
   COMPLETED: {
-    icon: "✅",
+    Icon: CheckCircle,
     label: "完了",
-    color: "text-green-600",
-    bg: "bg-green-50 border-green-200",
-    showSpinner: false,
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 border-emerald-200",
+    iconClass: "text-emerald-500",
+    spin: false,
   },
   FAILED: {
-    icon: "❌",
+    Icon: XCircle,
     label: "失敗",
-    color: "text-red-600",
-    bg: "bg-red-50 border-red-200",
-    showSpinner: false,
+    color: "text-rose-600",
+    bg: "bg-rose-50 border-rose-200",
+    iconClass: "text-rose-400",
+    spin: false,
   },
 } as const;
 
@@ -40,32 +45,31 @@ export function TaskStatus({ task, pollingError }: Props) {
   if (!task) return null;
 
   const config = STATUS_CONFIG[task.status];
+  const { Icon } = config;
 
   return (
-    <div className={`rounded-xl border p-4 ${config.bg}`}>
+    <div className={`rounded-2xl border p-4 ${config.bg}`}>
       <div className="flex items-center gap-3">
-        <span className="text-2xl">{config.icon}</span>
+        <Icon
+          size={24}
+          className={`${config.iconClass} flex-shrink-0 ${config.spin ? "animate-spin" : ""}`}
+        />
         <div className="flex-1">
-          <div className={`font-semibold ${config.color}`}>
-            {config.showSpinner && (
-              <span className="inline-block w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-2 align-middle" />
-            )}
-            {config.label}
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5">
+          <div className={`font-semibold ${config.color}`}>{config.label}</div>
+          <div className="text-xs text-violet-300 mt-0.5">
             タスクID: {task.task_id}
           </div>
         </div>
       </div>
 
       {task.status === "FAILED" && task.error_message && (
-        <p className="mt-3 text-sm text-red-700 bg-red-100 rounded p-2">
+        <p className="mt-3 text-sm text-rose-700 bg-rose-100 rounded-xl p-3">
           {task.error_message}
         </p>
       )}
 
       {pollingError && (
-        <p className="mt-2 text-xs text-red-500">
+        <p className="mt-2 text-xs text-rose-400">
           ステータス取得エラー: {pollingError}
         </p>
       )}

@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { Film, PenLine, Activity, Sparkles, Palette, Loader } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
 import { TaskStatus } from "./components/TaskStatus";
@@ -20,6 +21,33 @@ interface UploadProgress {
   percent: number;
 }
 
+const STEP_LABELS = [
+  {
+    num: "1",
+    label: "ファイルを選択",
+    icon: Film,
+    color: "bg-pink-100 text-pink-600 border-pink-200",
+  },
+  {
+    num: "2",
+    label: "創作指示を入力",
+    icon: PenLine,
+    color: "bg-violet-100 text-violet-600 border-violet-200",
+  },
+  {
+    num: "3",
+    label: "処理状況",
+    icon: Activity,
+    color: "bg-emerald-100 text-emerald-600 border-emerald-200",
+  },
+  {
+    num: "4",
+    label: "結果プレビュー",
+    icon: Sparkles,
+    color: "bg-amber-100 text-amber-600 border-amber-200",
+  },
+] as const;
+
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [instruction, setInstruction] = useState("");
@@ -34,30 +62,27 @@ export default function App() {
 
   const isProcessing = step === "uploading" || step === "submitted";
 
-  // Fetch download URL when task completes
   const handleCompleted = useCallback(
     async (completedTaskId: string) => {
-      if (downloadUrl) return; // already fetched
+      if (downloadUrl) return;
       try {
         const res = await getDownloadUrl(completedTaskId);
         setDownloadUrl(res.download_url);
         setDownloadKey(res.output_key);
       } catch (e) {
-        // silently ignore — user can still see task status
         console.error("Failed to get download URL", e);
       }
     },
     [downloadUrl]
   );
 
-  // Watch for task completion
   if (task?.status === "COMPLETED" && !downloadUrl && taskId) {
     handleCompleted(taskId);
   }
 
   const handleSubmit = async () => {
     if (!instruction.trim()) {
-      setSubmitError("編集指示を入力してください");
+      setSubmitError("創作指示を入力してください");
       return;
     }
 
@@ -69,7 +94,6 @@ export default function App() {
     const newTaskId = uuidv4();
 
     try {
-      // Upload all files to S3 in parallel
       const initialProgress = files.map((f) => ({
         filename: f.name,
         percent: 0,
@@ -78,10 +102,7 @@ export default function App() {
 
       const inputKeys = await Promise.all(
         files.map(async (file, i) => {
-          const { upload_url, key } = await getUploadUrl(
-            newTaskId,
-            file.name
-          );
+          const { upload_url, key } = await getUploadUrl(newTaskId, file.name);
           await uploadFileToS3(upload_url, file, (percent) => {
             setUploadProgress((prev) =>
               prev.map((p, idx) => (idx === i ? { ...p, percent } : p))
@@ -91,7 +112,6 @@ export default function App() {
         })
       );
 
-      // Create the task (pass newTaskId so Fargate looks for files under the same prefix)
       const { task_id } = await createTask(newTaskId, instruction, inputKeys);
       setTaskId(task_id);
       setStep("submitted");
@@ -114,32 +134,44 @@ export default function App() {
     setDownloadKey(null);
   };
 
+  const StepBadge = ({ index }: { index: number }) => {
+    const s = STEP_LABELS[index];
+    const Icon = s.icon;
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border ${s.color} mb-3`}
+      >
+        <Icon size={12} />
+        {s.num}. {s.label}
+      </span>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white">
+    <div className="min-h-screen watercolor-bg">
       <div className="max-w-2xl mx-auto px-4 py-10">
         {/* Header */}
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold mb-2">🎬 AI 動画編集</h1>
-          <p className="text-gray-400 text-sm">
+          <h1 className="font-klee text-4xl font-semibold mb-2 bg-gradient-to-r from-violet-500 to-pink-400 bg-clip-text text-transparent">
+            AI 創作スタジオ
+          </h1>
+          <p className="text-violet-400 text-sm flex items-center justify-center gap-1.5">
+            <Palette size={14} />
             Strands Agents × Claude Sonnet × MoviePy
           </p>
         </div>
 
         {/* Main card */}
-        <div className="bg-white text-gray-900 rounded-2xl shadow-2xl p-6 space-y-6">
+        <div className="bg-white/80 backdrop-blur-sm border border-lavender-200 rounded-3xl shadow-xl shadow-violet-100/50 p-6 space-y-6">
           {/* Step 1: Upload */}
           <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              1. ファイルを選択
-            </h2>
+            <StepBadge index={0} />
             <UploadZone onFilesSelected={setFiles} disabled={isProcessing} />
           </section>
 
           {/* Step 2: Instruction */}
           <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              2. 編集指示を入力
-            </h2>
+            <StepBadge index={1} />
             <InstructionBox
               value={instruction}
               onChange={setInstruction}
@@ -152,13 +184,13 @@ export default function App() {
             <div className="space-y-2">
               {uploadProgress.map((p) => (
                 <div key={p.filename}>
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <div className="flex justify-between text-xs text-violet-400 mb-1">
                     <span className="truncate">{p.filename}</span>
                     <span>{p.percent}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="w-full bg-lavender-100 rounded-full h-1.5">
                     <div
-                      className="bg-blue-500 h-1.5 rounded-full transition-all"
+                      className="bg-gradient-to-r from-violet-400 to-pink-400 h-1.5 rounded-full transition-all"
                       style={{ width: `${p.percent}%` }}
                     />
                   </div>
@@ -169,7 +201,7 @@ export default function App() {
 
           {/* Submit error */}
           {submitError && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
               {submitError}
             </p>
           )}
@@ -179,18 +211,35 @@ export default function App() {
             <button
               onClick={handleSubmit}
               disabled={isProcessing}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors shadow"
+              className={`flex-1 font-semibold py-3 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 text-white ${
+                isProcessing
+                  ? "bg-gradient-to-r from-violet-300 to-pink-300 cursor-not-allowed"
+                  : "bg-gradient-to-r from-violet-500 to-pink-400 hover:shadow-violet-200 hover:shadow-xl"
+              }`}
             >
-              {step === "uploading"
-                ? "アップロード中..."
-                : step === "submitted"
-                ? "処理中..."
-                : "編集を開始"}
+              {step === "uploading" ? (
+                <>
+                  <Loader size={16} className="animate-spin" />
+                  アップロード中...
+                </>
+              ) : step === "submitted" ? (
+                <>
+                  <Loader size={16} className="animate-spin" />
+                  処理中...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  創作を開始
+                </>
+              )}
             </button>
-            {(step === "submitted" || task?.status === "COMPLETED" || task?.status === "FAILED") && (
+            {(step === "submitted" ||
+              task?.status === "COMPLETED" ||
+              task?.status === "FAILED") && (
               <button
                 onClick={handleReset}
-                className="px-5 py-3 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-600 font-medium transition-colors"
+                className="px-5 py-3 rounded-2xl border border-lavender-200 hover:bg-lavender-50 text-violet-500 font-medium transition-colors"
               >
                 リセット
               </button>
@@ -200,9 +249,7 @@ export default function App() {
           {/* Step 3: Task status */}
           {task && (
             <section>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                3. 処理状況
-              </h2>
+              <StepBadge index={2} />
               <TaskStatus task={task} pollingError={pollingError} />
             </section>
           )}
@@ -210,9 +257,7 @@ export default function App() {
           {/* Step 4: Preview & Download */}
           {task?.status === "COMPLETED" && downloadUrl && (
             <section className="space-y-4">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-                4. 結果プレビュー & ダウンロード
-              </h2>
+              <StepBadge index={3} />
               <VideoPreview src={downloadUrl} />
               <DownloadButton
                 downloadUrl={downloadUrl}
@@ -222,7 +267,7 @@ export default function App() {
           )}
         </div>
 
-        <p className="text-center text-xs text-gray-600 mt-8">
+        <p className="text-center text-xs text-violet-300 mt-8">
           Powered by AWS ECS Fargate · Amazon Bedrock · Strands Agents
         </p>
       </div>
