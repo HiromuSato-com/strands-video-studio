@@ -64,6 +64,20 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         ]
       },
       {
+        # Read generated Luma AI videos from the Oregon bucket, then copy to Tokyo
+        Sid    = "LumaS3Access"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.luma_output.arn,
+          "${aws_s3_bucket.luma_output.arn}/*",
+        ]
+      },
+      {
         Sid    = "DynamoDBAccess"
         Effect = "Allow"
         Action = [

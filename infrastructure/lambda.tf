@@ -61,11 +61,12 @@ resource "aws_lambda_function" "create_task" {
 
   environment {
     variables = merge(local.lambda_common_env, {
-      ECS_CLUSTER          = aws_ecs_cluster.main.name
-      ECS_TASK_DEFINITION  = aws_ecs_task_definition.agent.arn
-      ECS_SUBNET_IDS       = join(",", aws_subnet.public[*].id)
+      ECS_CLUSTER           = aws_ecs_cluster.main.name
+      ECS_TASK_DEFINITION   = aws_ecs_task_definition.agent.arn
+      ECS_SUBNET_IDS        = join(",", aws_subnet.public[*].id)
       ECS_SECURITY_GROUP_ID = aws_security_group.ecs_tasks.id
-      CONTAINER_NAME       = "video-edit-agent"
+      CONTAINER_NAME        = "video-edit-agent"
+      LUMA_S3_BUCKET        = aws_s3_bucket.luma_output.bucket
     })
   }
 

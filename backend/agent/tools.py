@@ -21,8 +21,13 @@ logger = logging.getLogger(__name__)
 # Environment variables injected at Fargate task launch
 S3_BUCKET = os.environ["S3_BUCKET"]
 TASK_ID = os.environ["TASK_ID"]
+LUMA_S3_BUCKET = os.environ.get("LUMA_S3_BUCKET", "")
 
 s3 = boto3.client("s3")
+# Luma AI Ray 2 is only available in us-west-2 (Oregon)
+bedrock_luma = boto3.client("bedrock-runtime", region_name="us-west-2")
+s3_luma = boto3.client("s3", region_name="us-west-2")
+# Nova Reel (ap-northeast-1) kept as fallback for non-Luma models
 bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
 # Tracks the most recent output S3 key produced by any tool call
@@ -203,42 +208,45 @@ def concat_videos(input_keys: list[str]) -> str:
 @tool
 def generate_video(
     prompt: str,
-    duration_seconds: int = 6,
-    dimension: str = "1280x720",
+    duration: str = "5s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p",
 ) -> str:
     """
-    Generate a video from a text prompt using Amazon Nova Reel on Amazon Bedrock.
+    Generate a video from a text prompt using Luma AI Ray 2 on Amazon Bedrock (us-west-2).
+    The generated video is copied to the main Tokyo S3 bucket.
 
     Args:
-        prompt: Text description of the video to generate (1–512 characters)
-        duration_seconds: Video length in seconds, either 6 or 12 (default: 6)
-        dimension: Output resolution — "1280x720" (landscape) or "720x1280" (portrait) (default: "1280x720")
+        prompt: Text description of the video to generate (1–5000 characters)
+        duration: Video length — "5s" (default) or "9s"
+        aspect_ratio: Aspect ratio — "16:9" (default), "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"
+        resolution: Output resolution — "720p" (default) or "540p"
 
     Returns:
-        S3 key of the generated output video
+        S3 key of the generated output video (in the main Tokyo bucket)
     """
-    # S3 prefix must end with "/" for Bedrock async invoke
-    bedrock_output_prefix = f"s3://{S3_BUCKET}/tasks/{TASK_ID}/bedrock-output/"
+    if not LUMA_S3_BUCKET:
+        return json.dumps({"status": "failed", "error": "LUMA_S3_BUCKET env var not set"})
 
-    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration_seconds}s dimension={dimension}")
+    # Luma AI output must go to us-west-2 bucket (same region as the model)
+    luma_output_prefix = f"s3://{LUMA_S3_BUCKET}/tasks/{TASK_ID}/output/"
 
-    model_input = {
-        "taskType": "TEXT_VIDEO",
-        "textToVideoParams": {"text": prompt},
-        "videoGenerationConfig": {
-            "fps": 24,
-            "durationSeconds": duration_seconds,
-            "dimension": dimension,
-            "seed": random.randint(0, 2147483646),
-        },
-    }
+    logger.info(
+        f"Starting Luma AI video generation: prompt='{prompt[:80]}...' "
+        f"duration={duration} aspect_ratio={aspect_ratio} resolution={resolution}"
+    )
 
     try:
-        response = bedrock.start_async_invoke(
-            modelId="amazon.nova-reel-v1:0",
-            modelInput=model_input,
+        response = bedrock_luma.start_async_invoke(
+            modelId="luma.ray-v2:0",
+            modelInput={
+                "prompt": prompt,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+            },
             outputDataConfig={
-                "s3OutputDataConfig": {"s3Uri": bedrock_output_prefix}
+                "s3OutputDataConfig": {"s3Uri": luma_output_prefix}
             },
         )
     except Exception as e:
@@ -255,7 +263,7 @@ def generate_video(
     while elapsed < timeout_sec:
         time.sleep(poll_interval)
         elapsed += poll_interval
-        status_resp = bedrock.get_async_invoke(invocationArn=invocation_arn)
+        status_resp = bedrock_luma.get_async_invoke(invocationArn=invocation_arn)
         status = status_resp["status"]
         logger.info(f"Bedrock job status: {status} (elapsed {elapsed}s)")
         if status == "Completed":
@@ -268,17 +276,17 @@ def generate_video(
 
     # Bedrock saves output under {prefix}{invocation_id}/output.mp4
     invocation_id = invocation_arn.split("/")[-1]
-    bedrock_key = f"tasks/{TASK_ID}/bedrock-output/{invocation_id}/output.mp4"
+    luma_key = f"tasks/{TASK_ID}/output/{invocation_id}/output.mp4"
 
-    # Copy from Bedrock output location to canonical output path
-    output_filename = "generated.mp4"
+    # Download from Oregon (us-west-2) and re-upload to Tokyo (ap-northeast-1)
     local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
     try:
-        s3.download_file(S3_BUCKET, bedrock_key, local_output)
-        output_key = _upload_to_s3(local_output, output_filename)
+        logger.info(f"Downloading from Oregon bucket: s3://{LUMA_S3_BUCKET}/{luma_key}")
+        s3_luma.download_file(LUMA_S3_BUCKET, luma_key, local_output)
+        output_key = _upload_to_s3(local_output, "generated.mp4")
     finally:
         if os.path.exists(local_output):
             os.remove(local_output)
 
-    logger.info(f"Video generation complete: {output_key}")
+    logger.info(f"Video generation complete. Copied to Tokyo: {output_key}")
     return json.dumps({"output_key": output_key, "status": "success"})

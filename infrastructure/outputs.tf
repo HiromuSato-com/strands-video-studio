@@ -27,3 +27,8 @@ output "ecr_repository_url" {
   description = "ECR repository URL for the agent image"
   value       = aws_ecr_repository.agent.repository_url
 }
+
+output "luma_output_bucket" {
+  description = "S3 bucket name (us-west-2) for Luma AI generated video output"
+  value       = aws_s3_bucket.luma_output.bucket
+}

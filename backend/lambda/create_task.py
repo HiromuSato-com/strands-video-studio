@@ -21,6 +21,7 @@ ECS_TASK_DEFINITION = os.environ["ECS_TASK_DEFINITION"]
 ECS_SUBNET_IDS = os.environ["ECS_SUBNET_IDS"].split(",")
 ECS_SECURITY_GROUP_ID = os.environ["ECS_SECURITY_GROUP_ID"]
 CONTAINER_NAME = os.environ.get("CONTAINER_NAME", "video-edit-agent")
+LUMA_S3_BUCKET = os.environ.get("LUMA_S3_BUCKET", "")
 
 dynamodb = boto3.resource("dynamodb")
 ecs = boto3.client("ecs")
@@ -77,6 +78,7 @@ def handler(event, context):
                         {"name": "DYNAMODB_TABLE", "value": DYNAMODB_TABLE},
                         {"name": "INSTRUCTION", "value": instruction},
                         {"name": "INPUT_KEYS", "value": json.dumps(input_keys)},
+                        {"name": "LUMA_S3_BUCKET", "value": LUMA_S3_BUCKET},
                     ],
                 }
             ]
