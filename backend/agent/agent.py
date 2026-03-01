@@ -27,7 +27,7 @@ SYSTEM_PROMPT = """あなたはプロの動画編集アシスタントです。
 
 def create_agent() -> Agent:
     model = BedrockModel(
-        model_id="us.anthropic.claude-sonnet-4-5-20251001",
+        model_id="us.anthropic.claude-sonnet-4-6",
         region_name="us-east-1",
     )
     return Agent(
