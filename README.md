@@ -1,6 +1,6 @@
 # video-edit-by-strands-agents
 
-AI 動画編集アプリ — Strands Agents × Amazon Bedrock × AWS ECS Fargate
+AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × AWS ECS Fargate
 
 ## アーキテクチャ
 
@@ -16,12 +16,19 @@ AI 動画編集アプリ — Strands Agents × Amazon Bedrock × AWS ECS Fargate
        └─ GET  /download-url/{id}→ Lambda → S3 Presigned URL
 
 ECS Fargate (Strands Agent)
-  ├─ Strands Agent + BedrockModel (Claude Sonnet, us-east-1)
-  ├─ MoviePy + ffmpeg による動画処理
+  ├─ Strands Agent + BedrockModel (Claude Sonnet 4.6, us-east-1)
+  ├─ MoviePy + ffmpeg による動画編集
+  ├─ Luma AI Ray 2 (us-west-2) による AI 動画生成
+  │    └─ Oregon S3 (luma-output) → Tokyo S3 (assets) にクロスリージョン転送
   └─ 処理結果を S3 / DynamoDB に書き込み
 
 フロントエンド配信
   CloudFront → S3 (静的サイト)
+
+S3 バケット構成
+  ├─ video-edit-assets-{account}   (ap-northeast-1) — 入出力ファイル・最終動画
+  ├─ video-edit-frontend-{account} (ap-northeast-1) — React 静的ファイル
+  └─ video-edit-luma-{account}     (us-west-2)      — Luma AI 生成中間ファイル
 ```
 
 ## 前提条件
@@ -29,7 +36,11 @@ ECS Fargate (Strands Agent)
 - AWS CLI（認証済み）+ Terraform >= 1.6
 - Docker（ECR へのプッシュ用）
 - Node.js >= 20（フロントエンドビルド）
-- Amazon Bedrock で `us.anthropic.claude-sonnet-4-5-20251001` が **us-east-1** で有効化済み
+- Amazon Bedrock で以下のモデルを有効化済み:
+  - `us.anthropic.claude-sonnet-4-6` — **us-east-1**（LLM エージェント）
+  - `luma.ray-v2:0` — **us-west-2**（AI 動画生成）
+    > Bedrock コンソール (us-west-2) で有効化する際、S3 バケットの作成を求めるダイアログが表示されます。
+    > 「確認」をクリックして専用バケットを作成してください（Terraform で `video-edit-luma-{account}` を別途作成するため、コンソール作成バケットは不要です）。
 
 ## デプロイ手順
 
@@ -41,8 +52,7 @@ terraform init
 terraform apply
 ```
 
-VPC・サブネットも Terraform で自動作成されます（デフォルト CIDR: `10.0.0.0/16`）。
-変更したい場合は `terraform.tfvars` に `vpc_cidr = "..."` を追加してください。
+VPC・サブネット・S3 バケット（Tokyo + Oregon）・IAM・Lambda・ECS・CloudFront がすべて自動作成されます。
 
 `terraform output` で以下の値を確認する：
 
@@ -51,7 +61,8 @@ VPC・サブネットも Terraform で自動作成されます（デフォルト
 | `ecr_repository_url` | Docker イメージのプッシュ先 |
 | `api_url` | フロントエンドの `VITE_API_URL` |
 | `frontend_url` | アプリの公開 URL |
-| `s3_bucket` | アセット S3 バケット名 |
+| `s3_bucket` | アセット S3 バケット名（ap-northeast-1） |
+| `luma_output_bucket` | Luma AI 出力バケット名（us-west-2） |
 | `vpc_id` | 作成された VPC の ID |
 | `public_subnet_ids` | Fargate タスク用パブリックサブネット ID |
 
@@ -106,12 +117,12 @@ aws s3 sync dist/ s3://$FRONTEND_BUCKET/ \
 ## 使い方
 
 1. `frontend_url` をブラウザで開く
-2. 動画ファイル（MP4 等）や画像ファイルをドラッグ＆ドロップでアップロード
-3. 自然言語で編集指示を入力（例: 「最初の30秒をカットして」「10秒から20秒に画像を挿入して」）
+2. 動画ファイル（MP4 等）や画像ファイルをドラッグ＆ドロップでアップロード（複数可、追加式）
+3. 自然言語で編集指示または生成指示を入力
 4. 「編集を開始」をクリック
 5. Fargate でエージェントが起動し、処理が完了するとプレビューとダウンロードが表示される
 
-### 指示例
+### 指示例（動画編集）
 
 ```
 最初の10秒をトリミングして
@@ -123,6 +134,20 @@ video1.mp4 と video2.mp4 を結合して
 5秒から15秒の間に logo.png を挿入して
 ```
 
+### 指示例（AI 動画生成）
+
+```
+夕焼けの富士山をドローンで撮影したような動画を生成して
+```
+```
+猫が草原で楽しく遊ぶ縦型動画を作成して
+```
+```
+9秒の横向き動画で、雨の夜の東京の街並みを生成して
+```
+
+> ファイルをアップロードしなくても動画生成（テキスト→動画）が可能です。
+
 ---
 
 ## エージェントのツール
@@ -133,6 +158,16 @@ video1.mp4 と video2.mp4 を結合して
 | `trim_video` | 動画の指定時間範囲をトリミング |
 | `insert_image` | 動画の指定時間範囲に画像を挿入 |
 | `concat_videos` | 複数動画を順番に結合 |
+| `generate_video` | テキストプロンプトから AI 動画を生成（Luma AI Ray 2） |
+
+### generate_video パラメータ
+
+| パラメータ | 説明 | デフォルト |
+|-----------|------|-----------|
+| `prompt` | 生成する動画の説明（最大 5000 文字） | — |
+| `duration` | 長さ: `"5s"` または `"9s"` | `"5s"` |
+| `aspect_ratio` | アスペクト比: `"16:9"`, `"9:16"`, `"1:1"` など | `"16:9"` |
+| `resolution` | 解像度: `"720p"` または `"540p"` | `"720p"` |
 
 ---
 
@@ -155,3 +190,4 @@ terraform destroy
 ```
 
 > **注意**: S3 バケットにオブジェクトが残っている場合は先に手動削除が必要です。
+> 削除対象バケット: `video-edit-assets-{account}`, `video-edit-frontend-{account}`, `video-edit-luma-{account}`
