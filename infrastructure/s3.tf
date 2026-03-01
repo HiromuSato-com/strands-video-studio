@@ -32,7 +32,7 @@ resource "aws_s3_bucket_policy" "assets" {
           Service = "bedrock.amazonaws.com"
         }
         Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.assets.arn}/tasks/*/bedrock-output/*"
+        Resource = "${aws_s3_bucket.assets.arn}/tasks/*"
         Condition = {
           StringEquals = {
             "aws:SourceAccount" = data.aws_caller_identity.current.account_id
@@ -52,66 +52,67 @@ resource "aws_s3_bucket_public_access_block" "assets" {
 }
 
 # ─── Luma AI output bucket (Oregon / us-west-2) ──────────────────────────────
-# Luma AI Ray 2 on Bedrock is only available in us-west-2.
-# Bedrock writes generated videos here; ECS task then copies them to the
-# main assets bucket in ap-northeast-1 (Tokyo).
-resource "aws_s3_bucket" "luma_output" {
+# This bucket was auto-created by the Bedrock console when enabling Luma AI Ray 2.
+# We reference it as a data source rather than managing it with Terraform.
+data "aws_s3_bucket" "luma_output" {
   provider = aws.uswest2
-  bucket   = "${var.project_name}-luma-${data.aws_caller_identity.current.account_id}"
-
-  tags = {
-    Project = var.project_name
-  }
+  bucket   = var.luma_s3_bucket_name
 }
 
-resource "aws_s3_bucket_public_access_block" "luma_output" {
-  provider                = aws.uswest2
-  bucket                  = aws_s3_bucket.luma_output.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
+# Allow Amazon Bedrock Luma AI async invoke to write generated videos to this bucket
 resource "aws_s3_bucket_policy" "luma_output" {
   provider = aws.uswest2
-  bucket   = aws_s3_bucket.luma_output.id
-
+  bucket   = data.aws_s3_bucket.luma_output.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        # Allow Bedrock (us-west-2) to write generated video files
         Sid    = "AllowBedrockLumaWrite"
         Effect = "Allow"
         Principal = {
           Service = "bedrock.amazonaws.com"
         }
         Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.luma_output.arn}/*"
+        Resource = "${data.aws_s3_bucket.luma_output.arn}/*"
         Condition = {
           StringEquals = {
             "aws:SourceAccount" = data.aws_caller_identity.current.account_id
           }
         }
-      },
+      }
+    ]
+  })
+}
+
+# ─── Nova Reel output bucket (N. Virginia / us-east-1) ───────────────────────
+# This bucket was auto-created by the Bedrock console when enabling Amazon Nova Reel.
+# We reference it as a data source rather than managing it with Terraform.
+data "aws_s3_bucket" "nova_reel_output" {
+  provider = aws.useast1
+  bucket   = var.nova_reel_s3_bucket_name
+}
+
+# Allow Amazon Bedrock Nova Reel async invoke to write generated videos to this bucket
+resource "aws_s3_bucket_policy" "nova_reel_output" {
+  provider = aws.useast1
+  bucket   = data.aws_s3_bucket.nova_reel_output.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
       {
-        # Allow ECS task role to read and clean up generated files
-        Sid    = "AllowECSTaskRead"
+        Sid    = "AllowBedrockNovaReelWrite"
         Effect = "Allow"
         Principal = {
-          AWS = aws_iam_role.ecs_task.arn
+          Service = "bedrock.amazonaws.com"
         }
-        Action = [
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          aws_s3_bucket.luma_output.arn,
-          "${aws_s3_bucket.luma_output.arn}/*",
-        ]
-      },
+        Action   = "s3:PutObject"
+        Resource = "${data.aws_s3_bucket.nova_reel_output.arn}/*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      }
     ]
   })
 }
