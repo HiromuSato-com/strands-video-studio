@@ -95,8 +95,8 @@ export default function App() {
         })
       );
 
-      // Create the task
-      const { task_id } = await createTask(instruction, inputKeys);
+      // Create the task (pass newTaskId so Fargate looks for files under the same prefix)
+      const { task_id } = await createTask(newTaskId, instruction, inputKeys);
       setTaskId(task_id);
       setStep("submitted");
     } catch (e) {

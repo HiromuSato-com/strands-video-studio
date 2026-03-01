@@ -32,15 +32,16 @@ def handler(event, context):
     except json.JSONDecodeError:
         return error_response(400, "Invalid JSON body")
 
+    task_id = body.get("task_id", "").strip()
     instruction = body.get("instruction", "").strip()
     input_keys = body.get("input_keys", [])
 
+    if not task_id:
+        return error_response(400, "task_id is required")
     if not instruction:
         return error_response(400, "instruction is required")
     if not input_keys:
         return error_response(400, "input_keys must not be empty")
-
-    task_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
     # Write PENDING record to DynamoDB

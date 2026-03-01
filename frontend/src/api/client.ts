@@ -45,10 +45,12 @@ export async function uploadFileToS3(
  * Step 3: Create a task with instruction and S3 input keys.
  */
 export async function createTask(
+  taskId: string,
   instruction: string,
   inputKeys: string[]
 ): Promise<CreateTaskResponse> {
   const { data } = await api.post<CreateTaskResponse>("/tasks", {
+    task_id: taskId,
     instruction,
     input_keys: inputKeys,
   });
