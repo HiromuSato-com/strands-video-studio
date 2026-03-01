@@ -23,7 +23,7 @@ S3_BUCKET = os.environ["S3_BUCKET"]
 TASK_ID = os.environ["TASK_ID"]
 
 s3 = boto3.client("s3")
-bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+bedrock = boto3.client("bedrock-runtime", region_name="ap-northeast-1")
 
 # Tracks the most recent output S3 key produced by any tool call
 _last_output_key: str | None = None
@@ -217,9 +217,10 @@ def generate_video(
     Returns:
         S3 key of the generated output video
     """
-    bedrock_output_prefix = f"s3://{S3_BUCKET}/tasks/{TASK_ID}/bedrock-output"
+    # S3 prefix must end with "/" for Bedrock async invoke
+    bedrock_output_prefix = f"s3://{S3_BUCKET}/tasks/{TASK_ID}/bedrock-output/"
 
-    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration_seconds}s")
+    logger.info(f"Starting video generation: prompt='{prompt[:80]}...' duration={duration_seconds}s dimension={dimension}")
 
     model_input = {
         "taskType": "TEXT_VIDEO",
@@ -232,13 +233,18 @@ def generate_video(
         },
     }
 
-    response = bedrock.start_async_invoke(
-        modelId="amazon.nova-reel-v1:1",
-        modelInput=model_input,
-        outputDataConfig={
-            "s3OutputDataConfig": {"s3Uri": bedrock_output_prefix}
-        },
-    )
+    try:
+        response = bedrock.start_async_invoke(
+            modelId="amazon.nova-reel-v1:0",
+            modelInput=model_input,
+            outputDataConfig={
+                "s3OutputDataConfig": {"s3Uri": bedrock_output_prefix}
+            },
+        )
+    except Exception as e:
+        logger.error(f"start_async_invoke failed: {type(e).__name__}: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+
     invocation_arn = response["invocationArn"]
     logger.info(f"Bedrock async invoke started: {invocation_arn}")
 
@@ -260,7 +266,7 @@ def generate_video(
     else:
         return json.dumps({"status": "failed", "error": "Timeout waiting for video generation"})
 
-    # Bedrock saves output under {prefix}/{invocation_id}/output.mp4
+    # Bedrock saves output under {prefix}{invocation_id}/output.mp4
     invocation_id = invocation_arn.split("/")[-1]
     bedrock_key = f"tasks/{TASK_ID}/bedrock-output/{invocation_id}/output.mp4"
 
