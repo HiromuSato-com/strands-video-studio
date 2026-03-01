@@ -88,16 +88,16 @@ cd frontend
 API_URL=$(terraform -chdir=../infrastructure output -raw api_url)
 echo "VITE_API_URL=$API_URL" > .env
 
-npm install
+# プロキシ環境の場合は --no-proxy を付ける
+npm install --no-proxy
 npm run build
 
-# S3 に同期
-FRONTEND_BUCKET=$(terraform -chdir=../infrastructure output -raw s3_bucket | sed 's/assets/frontend/')
-# ※ バケット名は terraform output で確認してください
-aws s3 sync dist/ s3://<frontend-bucket-name>/ \
+# S3 に同期（バケット名は terraform output で確認）
+FRONTEND_BUCKET="$(terraform -chdir=../infrastructure output -raw s3_bucket | sed 's/assets/frontend/')"
+aws s3 sync dist/ s3://$FRONTEND_BUCKET/ \
   --profile <your-profile> --region ap-northeast-1
 
-# CloudFront キャッシュ無効化（必要に応じて）
+# CloudFront キャッシュ無効化（再デプロイ時）
 # aws cloudfront create-invalidation --distribution-id <id> --paths "/*"
 ```
 
