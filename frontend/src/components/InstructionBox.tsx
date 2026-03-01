@@ -1,4 +1,5 @@
 import { PenLine } from "lucide-react";
+import { playSound, Snd } from "../lib/snd";
 
 interface Props {
   value: string;
@@ -7,17 +8,26 @@ interface Props {
 }
 
 const EXAMPLES = [
-  { text: "最初の10秒をトリミングして", color: "bg-pink-50 hover:bg-pink-100 text-pink-600 border-pink-200" },
-  { text: "夕焼けの富士山の動画を生成して", color: "bg-violet-50 hover:bg-violet-100 text-violet-600 border-violet-200" },
-  { text: "video1とvideo2を結合して", color: "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200" },
-  { text: "5秒から15秒に画像を挿入して", color: "bg-amber-50 hover:bg-amber-100 text-amber-600 border-amber-200" },
+  "最初の10秒をトリミングして",
+  "夕焼けの富士山の動画を生成して",
+  "video1とvideo2を結合して",
+  "5秒から15秒に画像を挿入して",
 ];
+
+const C = {
+  border:    "#D4C9B5",
+  textMain:  "#1C1810",
+  textSub:   "#8A7D6A",
+  textMuted: "#B8AC9C",
+  badge:     "#EDE4D4",
+  badgeText: "#6B5440",
+} as const;
 
 export function InstructionBox({ value, onChange, disabled }: Props) {
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-1.5 text-sm font-medium text-violet-600">
-        <PenLine size={14} />
+      <label className="flex items-center gap-1.5 text-xs font-medium" style={{ color: C.textSub }}>
+        <PenLine size={12} />
         創作指示
       </label>
       <textarea
@@ -26,18 +36,28 @@ export function InstructionBox({ value, onChange, disabled }: Props) {
         disabled={disabled}
         rows={3}
         placeholder="例: 夕焼けの富士山の動画を生成して"
-        className="w-full rounded-2xl border border-lavender-200 px-4 py-3 text-sm text-violet-800 placeholder-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 disabled:opacity-50 disabled:bg-lavender-50 resize-none bg-white/80"
+        className="w-full rounded-lg px-3 py-2.5 text-sm disabled:opacity-50 resize-none transition-all focus:outline-none"
+        style={{
+          background: "rgba(255,255,255,0.6)",
+          border: `1px solid ${C.border}`,
+          color: C.textMain,
+        }}
+        onFocus={e => (e.currentTarget.style.borderColor = "#9B6B3A")}
+        onBlur={e => (e.currentTarget.style.borderColor = C.border)}
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-1.5 overflow-x-auto pb-1 flex-nowrap">
         {EXAMPLES.map((ex) => (
           <button
-            key={ex.text}
+            key={ex}
             type="button"
             disabled={disabled}
-            onClick={() => onChange(ex.text)}
-            className={`text-xs rounded-full px-3 py-1.5 border transition-colors disabled:opacity-50 ${ex.color}`}
+            onClick={() => { playSound(Snd.SOUNDS.SELECT); onChange(ex); }}
+            className="text-xs px-3 py-1.5 rounded-full transition-colors disabled:opacity-50 whitespace-nowrap flex-shrink-0"
+            style={{ background: C.badge, color: C.badgeText, border: `1px solid ${C.border}` }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = "#9B6B3A")}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
           >
-            {ex.text}
+            {ex}
           </button>
         ))}
       </div>

@@ -1,20 +1,16 @@
 import { useCallback, useRef, useState } from "react";
 import { UploadCloud, Film, ImageIcon, X } from "lucide-react";
+import { playSound, Snd } from "../lib/snd";
 
 interface Props {
   onFilesSelected: (files: File[]) => void;
   disabled?: boolean;
+  className?: string;
 }
 
 const ACCEPTED_TYPES = [
-  "video/mp4",
-  "video/quicktime",
-  "video/x-msvideo",
-  "video/webm",
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
+  "video/mp4", "video/quicktime", "video/x-msvideo", "video/webm",
+  "image/jpeg", "image/png", "image/gif", "image/webp",
 ];
 
 function isAccepted(f: File) {
@@ -24,7 +20,15 @@ function isAccepted(f: File) {
   );
 }
 
-export function UploadZone({ onFilesSelected, disabled }: Props) {
+const C = {
+  border:    "#D4C9B5",
+  accent:    "#9B6B3A",
+  textMain:  "#1C1810",
+  textSub:   "#8A7D6A",
+  textMuted: "#B8AC9C",
+} as const;
+
+export function UploadZone({ onFilesSelected, disabled, className }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -41,6 +45,7 @@ export function UploadZone({ onFilesSelected, disabled }: Props) {
           ...valid.filter((f) => !existingKeys.has(`${f.name}-${f.size}`)),
         ];
         onFilesSelected(merged);
+        if (merged.length > prev.length) playSound(Snd.SOUNDS.TAP);
         return merged;
       });
       if (inputRef.current) inputRef.current.value = "";
@@ -50,6 +55,7 @@ export function UploadZone({ onFilesSelected, disabled }: Props) {
 
   const removeFile = useCallback(
     (index: number) => {
+      playSound(Snd.SOUNDS.TAP);
       setSelectedFiles((prev) => {
         const next = prev.filter((_, i) => i !== index);
         onFilesSelected(next);
@@ -69,40 +75,35 @@ export function UploadZone({ onFilesSelected, disabled }: Props) {
   );
 
   return (
-    <div className="space-y-3">
+    <div className={`flex flex-col gap-2 ${className ?? ""}`}>
+      {/* ドロップゾーン */}
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!disabled) setIsDragging(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); if (!disabled) setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
-          isDragging
-            ? "border-violet-400 bg-lavender-50 scale-[1.01]"
-            : "border-lavender-200 bg-lavender-50/30 hover:border-violet-300 hover:bg-lavender-50"
-        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-        onClick={() => {
-          if (!disabled) inputRef.current?.click();
+        onClick={() => { if (!disabled) inputRef.current?.click(); }}
+        className="flex-shrink-0 flex flex-col justify-center text-center p-6 rounded-lg cursor-pointer transition-all"
+        style={{
+          border: `1.5px dashed ${isDragging ? C.accent : C.border}`,
+          background: isDragging ? "rgba(155,107,58,0.06)" : "rgba(255,255,255,0.35)",
+          boxShadow: isDragging
+            ? `inset 0 2px 10px rgba(155,107,58,0.12), 0 0 16px rgba(155,107,58,0.2)`
+            : `inset 0 2px 8px rgba(12,10,5,0.18)`,
         }}
       >
         <UploadCloud
-          size={40}
-          className={`mx-auto mb-3 transition-colors ${
-            isDragging ? "text-violet-400" : "text-violet-300"
-          }`}
+          size={36}
+          className="mx-auto mb-3 transition-colors"
+          style={{ color: isDragging ? C.accent : C.textMuted }}
         />
-        <p className="text-violet-600 font-medium">
-          動画・画像ファイルをドロップ
+        <p className="text-sm font-medium" style={{ color: C.textMain }}>
+          動画・画像をドロップ
         </p>
-        <p className="text-sm text-violet-300 mt-1">
-          または クリックしてファイルを選択（複数可・追加可）
+        <p className="text-xs mt-1.5" style={{ color: C.textMuted }}>
+          クリックで選択（複数可）
         </p>
-        <p className="text-xs text-violet-300 mt-2">
-          対応形式: MP4, MOV, AVI, WebM, JPG, PNG, GIF, WebP
-        </p>
-        <p className="text-xs text-pink-400 mt-1">
-          ファイルなしでも動画生成（AI テキスト→動画）が可能です
+        <p className="text-xs mt-0.5" style={{ color: C.textMuted }}>
+          ファイルなしでも動画生成が可能
         </p>
         <input
           ref={inputRef}
@@ -115,40 +116,43 @@ export function UploadZone({ onFilesSelected, disabled }: Props) {
         />
       </div>
 
+      {/* ファイル一覧 */}
       {selectedFiles.length > 0 && (
-        <ul className="space-y-1.5">
-          {selectedFiles.map((f, i) => (
-            <li
-              key={`${f.name}-${f.size}`}
-              className="flex items-center gap-2 text-sm text-violet-700 bg-white border border-pink-100 rounded-xl shadow-sm px-3 py-2"
-            >
-              <span className="text-violet-300 flex-shrink-0">
-                {f.type.startsWith("video") ? (
-                  <Film size={14} />
-                ) : (
-                  <ImageIcon size={14} />
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+          <p className="flex-shrink-0 text-xs font-medium px-0.5" style={{ color: C.textMuted }}>
+            {selectedFiles.length} 件選択済み
+          </p>
+          <ul className="space-y-1.5">
+            {selectedFiles.map((f, i) => (
+              <li
+                key={`${f.name}-${f.size}`}
+                className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
+                style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}
+              >
+                <span className="flex-shrink-0" style={{ color: C.textMuted }}>
+                  {f.type.startsWith("video") ? <Film size={13} /> : <ImageIcon size={13} />}
+                </span>
+                <span className="truncate flex-1 text-xs" style={{ color: C.textMain }}>{f.name}</span>
+                <span className="text-xs whitespace-nowrap" style={{ color: C.textMuted }}>
+                  {(f.size / 1024 / 1024).toFixed(1)} MB
+                </span>
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                    className="ml-1 transition-colors"
+                    style={{ color: C.textMuted }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#9B2C2C")}
+                    onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                    aria-label="削除"
+                  >
+                    <X size={13} />
+                  </button>
                 )}
-              </span>
-              <span className="truncate flex-1">{f.name}</span>
-              <span className="text-violet-300 text-xs whitespace-nowrap">
-                {(f.size / 1024 / 1024).toFixed(1)} MB
-              </span>
-              {!disabled && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFile(i);
-                  }}
-                  className="text-violet-300 hover:text-rose-400 transition-colors ml-1"
-                  aria-label="削除"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

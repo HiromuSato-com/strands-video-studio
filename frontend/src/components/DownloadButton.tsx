@@ -5,6 +5,12 @@ interface Props {
   outputKey: string;
 }
 
+const C = {
+  accent:    "#9B6B3A",
+  accentHov: "#7D5530",
+  card:      "#F3EDE1",
+} as const;
+
 export function DownloadButton({ downloadUrl, outputKey }: Props) {
   const filename = outputKey.split("/").pop() ?? "output.mp4";
 
@@ -12,9 +18,12 @@ export function DownloadButton({ downloadUrl, outputKey }: Props) {
     <a
       href={downloadUrl}
       download={filename}
-      className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium px-6 py-3 rounded-2xl transition-colors shadow-lg shadow-emerald-100"
+      className="inline-flex items-center gap-2 font-mono font-semibold text-[11px] tracking-wider px-6 py-3 rounded-lg transition-colors"
+      style={{ background: C.accent, color: C.card }}
+      onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = C.accentHov)}
+      onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = C.accent)}
     >
-      <Download size={16} />
+      <Download size={14} />
       {filename} をダウンロード
     </a>
   );

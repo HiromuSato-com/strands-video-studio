@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
@@ -12,6 +12,7 @@ import {
   createTask,
   getDownloadUrl,
 } from "./api/client";
+import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
 type VideoModel = "luma" | "nova_reel";
@@ -21,11 +22,25 @@ interface UploadProgress {
   percent: number;
 }
 
+// 色の定数 — 素材感のある温かいパレット
+const C = {
+  bg:          "#121008",  // 深い琥珀の暗闇
+  card:        "#F3EDE1",  // リネン
+  border:      "#D4C9B5",  // 砂
+  accent:      "#9B6B3A",  // コニャック
+  accentHover: "#7D5530",
+  textMain:    "#1C1810",  // 温かい黒
+  textSub:     "#8A7D6A",  // 温かい中間
+  textMuted:   "#B8AC9C",  // 温かい薄
+  badge:       "#EDE4D4",  // 薄い砂
+  badgeText:   "#6B5440",
+} as const;
+
 const STEP_LABELS = [
-  { num: "1", label: "ファイルを選択",   icon: Film,       color: "bg-pink-100 text-pink-600 border-pink-200" },
-  { num: "2", label: "創作指示を入力",   icon: PenLine,    color: "bg-violet-100 text-violet-600 border-violet-200" },
-  { num: "3", label: "処理状況",         icon: Activity,   color: "bg-emerald-100 text-emerald-600 border-emerald-200" },
-  { num: "4", label: "結果プレビュー",   icon: Sparkles,   color: "bg-amber-100 text-amber-600 border-amber-200" },
+  { num: "1", label: "ファイルを選択", icon: Film       },
+  { num: "2", label: "創作指示を入力", icon: PenLine    },
+  { num: "3", label: "処理状況",       icon: Activity   },
+  { num: "4", label: "結果プレビュー", icon: Sparkles   },
 ] as const;
 
 export default function App() {
@@ -41,6 +56,16 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
+
+  // サウンド — タスクステータス変化を検知して再生
+  const prevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!task || task.status === prevStatusRef.current) return;
+    prevStatusRef.current = task.status;
+    if (task.status === "RUNNING")    playSound(Snd.SOUNDS.NOTIFICATION);
+    if (task.status === "COMPLETED")  playSound(Snd.SOUNDS.CELEBRATION);
+    if (task.status === "FAILED")     playSound(Snd.SOUNDS.CAUTION);
+  }, [task?.status]);
 
   const handleCompleted = useCallback(
     async (completedTaskId: string) => {
@@ -63,10 +88,11 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (!instruction.trim()) {
+      playSound(Snd.SOUNDS.CAUTION);
       setSubmitError("創作指示を入力してください");
       return;
     }
-
+    playSound(Snd.SOUNDS.BUTTON);
     setSubmitError(null);
     setStep("uploading");
     setDownloadUrl(null);
@@ -74,7 +100,6 @@ export default function App() {
     setShowModal(false);
 
     const newTaskId = uuidv4();
-
     try {
       const initialProgress = files.map((f) => ({ filename: f.name, percent: 0 }));
       setUploadProgress(initialProgress);
@@ -101,6 +126,7 @@ export default function App() {
   };
 
   const handleReset = () => {
+    playSound(Snd.SOUNDS.TAP);
     setFiles([]);
     setInstruction("");
     setVideoModel("luma");
@@ -117,7 +143,10 @@ export default function App() {
     const s = STEP_LABELS[index];
     const Icon = s.icon;
     return (
-      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border ${s.color} mb-3`}>
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full self-start"
+        style={{ background: C.badge, color: C.badgeText, border: `1px solid ${C.border}` }}
+      >
         <Icon size={12} />
         {s.num}. {s.label}
       </span>
@@ -125,7 +154,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen watercolor-bg">
+    <div className="h-screen flex flex-col overflow-y-hidden luxury-bg">
+
       {/* 完成モーダル */}
       {showModal && downloadUrl && downloadKey && (
         <CompletionModal
@@ -136,122 +166,165 @@ export default function App() {
         />
       )}
 
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="font-klee text-4xl font-semibold mb-2 bg-gradient-to-r from-violet-500 to-pink-400 bg-clip-text text-transparent">
-            AI 創作スタジオ
-          </h1>
-          <p className="text-violet-400 text-sm flex items-center justify-center gap-1.5">
-            <Palette size={14} />
-            Strands Agents × Claude Sonnet × MoviePy
-          </p>
-        </div>
+      {/* Header */}
+      <div className="text-center py-2.5 flex-shrink-0" style={{ borderBottom: `1px solid #2A2318` }}>
+        <h1 className="font-klee text-xl font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
+          AI 創作スタジオ
+        </h1>
+        <p className="text-[11px] mt-0.5 flex items-center justify-center gap-1.5" style={{ color: C.textSub }}>
+          <Palette size={11} />
+          Strands Agents · Claude Sonnet · MoviePy
+        </p>
+      </div>
 
-        {/* Main card */}
-        <div className="bg-white/80 backdrop-blur-sm border border-lavender-200 rounded-3xl shadow-xl shadow-violet-100/50 p-6 space-y-5">
+      {/* Main container */}
+      <div className="max-w-5xl w-full mx-auto flex-1 overflow-hidden px-6 pb-4 pt-3">
+        {/* Card — リネン */}
+        <div
+          className="p-5 h-full flex flex-col rounded-xl shadow-2xl"
+          style={{
+            background: C.card,
+            border: `1px solid ${C.border}`,
+            boxShadow: `0 24px 60px rgba(6,4,2,0.7)`,
+          }}
+        >
 
           {step === "idle" ? (
-            /* ─────────────────────────────────────────
-               FORM VIEW（入力フォーム）
-            ───────────────────────────────────────── */
-            <>
-              <section>
-                <StepBadge index={0} />
-                <UploadZone onFilesSelected={setFiles} disabled={false} />
-              </section>
+            <div className="flex-1 overflow-hidden grid grid-cols-[2fr_3fr] gap-8">
 
-              <section>
+              {/* 左カラム */}
+              <div className="flex flex-col gap-4 min-h-0 min-w-0">
+                <StepBadge index={0} />
+                <UploadZone onFilesSelected={setFiles} disabled={false} className="flex-1 min-h-0" />
+              </div>
+
+              {/* 右カラム */}
+              <div className="flex flex-col gap-4 min-h-0 min-w-0 pl-8" style={{ borderLeft: `1px solid ${C.border}` }}>
                 <StepBadge index={1} />
                 <InstructionBox value={instruction} onChange={setInstruction} disabled={false} />
 
-                <div className="mt-3">
-                  <p className="text-xs text-violet-400 mb-2 flex items-center gap-1">
-                    <Clapperboard size={11} />
-                    AI動画生成モデル（動画生成指示の場合に使用）
+                {/* モデル選択 — カセット選択UI */}
+                <div>
+                  <p className="text-xs mb-2 flex items-center gap-1.5" style={{ color: C.textSub }}>
+                    <Clapperboard size={12} />
+                    AI動画生成モデル
                   </p>
                   <div className="flex gap-2">
                     {([
-                      { value: "luma" as VideoModel,     label: "Luma AI Ray 2",    desc: "5s / 9s · 多彩なアスペクト比" },
-                      { value: "nova_reel" as VideoModel, label: "Amazon Nova Reel", desc: "最大6s · 1280×720固定" },
-                    ] as const).map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        onClick={() => setVideoModel(m.value)}
-                        className={`flex-1 text-left px-3 py-2 rounded-xl border text-xs transition-all cursor-pointer ${
-                          videoModel === m.value
-                            ? "border-violet-400 bg-violet-50 text-violet-700"
-                            : "border-lavender-200 bg-white/60 text-violet-400 hover:border-violet-300"
-                        }`}
-                      >
-                        <span className="font-semibold block">{m.label}</span>
-                        <span className="text-[10px] opacity-70">{m.desc}</span>
-                      </button>
-                    ))}
+                      {
+                        value: "luma" as VideoModel,
+                        label: "Luma AI Ray 2",
+                        desc: "5s / 9s · 多彩なアスペクト比",
+                        stripe: "linear-gradient(90deg, #9B6B3A 0%, #D4A96A 60%, #C49050 100%)",
+                      },
+                      {
+                        value: "nova_reel" as VideoModel,
+                        label: "Amazon Nova Reel",
+                        desc: "最大6s · 1280×720固定",
+                        stripe: "linear-gradient(90deg, #4A6070 0%, #7A9AAE 60%, #5A8098 100%)",
+                      },
+                    ] as const).map((m) => {
+                      const active = videoModel === m.value;
+                      return (
+                        <button
+                          key={m.value}
+                          type="button"
+                          onClick={() => {
+                            if (videoModel !== m.value) playSound(Snd.SOUNDS.TOGGLE_ON);
+                            setVideoModel(m.value);
+                          }}
+                          className="flex-1 text-left rounded-lg overflow-hidden cursor-pointer transition-all duration-200"
+                          style={{
+                            border: `1.5px solid ${active ? C.accent : C.border}`,
+                            background: active ? C.card : "rgba(243,237,225,0.45)",
+                            boxShadow: active
+                              ? `0 0 20px rgba(155,107,58,0.35), 0 2px 8px rgba(6,4,2,0.3)`
+                              : `0 1px 4px rgba(6,4,2,0.15)`,
+                          }}
+                        >
+                          {/* カセットラベルのカラーストライプ */}
+                          <div style={{ height: "4px", background: m.stripe }} />
+                          <div className="px-3 py-2">
+                            <span className="font-semibold block text-sm" style={{ color: C.textMain }}>
+                              {m.label}
+                            </span>
+                            <span className="text-xs" style={{ color: C.textSub }}>
+                              {m.desc}
+                            </span>
+                            {active && (
+                              <span className="text-[10px] tracking-[0.15em] uppercase mt-1.5 block" style={{ color: C.accent }}>
+                                ▶ selected
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              </section>
 
-              {submitError && (
-                <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-                  {submitError}
-                </p>
-              )}
+                {submitError && (
+                  <p className="text-xs border px-3 py-2 rounded-lg" style={{ color: "#9B2C2C", background: "#FFF5F5", borderColor: "#FEB2B2" }}>
+                    {submitError}
+                  </p>
+                )}
 
-              <button
-                onClick={handleSubmit}
-                className="w-full font-semibold py-3 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 text-white bg-gradient-to-r from-violet-500 to-pink-400 hover:shadow-violet-200 hover:shadow-xl"
-              >
-                <Sparkles size={16} />
-                創作を開始
-              </button>
-            </>
+                <button
+                  onClick={handleSubmit}
+                  className="mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors btn-glow-pulse text-sm"
+                  style={{ background: C.accent, color: C.card }}
+                  onMouseEnter={e => (e.currentTarget.style.background = C.accentHover)}
+                  onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
+                >
+                  <Sparkles size={16} />
+                  創作を開始
+                </button>
+              </div>
+            </div>
+
           ) : (
-            /* ─────────────────────────────────────────
-               STATUS VIEW（送信後・処理中）
-               フォームを畳んでステータスを上部に表示
-            ───────────────────────────────────────── */
             <>
-              {/* 送信内容サマリー（コンパクト） */}
-              <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-pink-50/40 p-4">
-                <p className="text-[10px] font-semibold text-violet-300 uppercase tracking-widest mb-2">
+              {/* 送信内容サマリー */}
+              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.border}` }}>
+                {/* Cartridge stripe */}
+                <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #D4A96A 55%, ${C.accent} 100%)` }} />
+                <div className="p-4" style={{ background: "#EDE4D4" }}>
+                <p className="text-[10px] font-mono tracking-[0.15em] uppercase mb-2" style={{ color: C.textMuted }}>
                   送信した創作内容
                 </p>
-                <p className="text-sm text-violet-700 leading-snug">
+                <p className="text-sm leading-snug" style={{ color: C.textMain }}>
                   {instruction.length > 100 ? instruction.slice(0, 100) + "…" : instruction}
                 </p>
-                {(files.length > 0 || true) && (
-                  <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                    {files.map((f) => (
-                      <span
-                        key={f.name}
-                        className="inline-flex items-center gap-1 text-[11px] bg-white/80 border border-violet-100 text-violet-500 px-2 py-0.5 rounded-full"
-                      >
-                        <Film size={10} />
-                        {f.name}
-                      </span>
-                    ))}
-                    <span className="text-[11px] text-violet-300">
-                      {videoModel === "luma" ? "Luma AI Ray 2" : "Amazon Nova Reel"}
+                <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                  {files.map((f) => (
+                    <span
+                      key={f.name}
+                      className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textSub }}
+                    >
+                      <Film size={9} />
+                      {f.name}
                     </span>
-                  </div>
-                )}
+                  ))}
+                  <span className="text-[10px]" style={{ color: C.textMuted }}>
+                    {videoModel === "luma" ? "Luma AI Ray 2" : "Amazon Nova Reel"}
+                  </span>
+                </div>
+                </div>
               </div>
 
-              {/* アップロード進捗 */}
               {step === "uploading" && uploadProgress.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-2 mt-4">
                   {uploadProgress.map((p) => (
                     <div key={p.filename}>
-                      <div className="flex justify-between text-xs text-violet-400 mb-1">
+                      <div className="flex justify-between text-xs mb-1 font-mono" style={{ color: C.textSub }}>
                         <span className="truncate">{p.filename}</span>
                         <span>{p.percent}%</span>
                       </div>
-                      <div className="w-full bg-lavender-100 rounded-full h-1.5">
+                      <div className="w-full h-1.5 rounded-sm" style={{ background: "rgba(28,24,16,0.1)" }}>
                         <div
-                          className="bg-gradient-to-r from-violet-400 to-pink-400 h-1.5 rounded-full transition-all"
-                          style={{ width: `${p.percent}%` }}
+                          className="h-1.5 rounded-sm transition-all duration-300"
+                          style={{ width: `${p.percent}%`, background: C.accent }}
                         />
                       </div>
                     </div>
@@ -259,58 +332,60 @@ export default function App() {
                 </div>
               )}
 
-              {/* アップロード中スピナー（ファイルなし） */}
               {step === "uploading" && uploadProgress.length === 0 && (
-                <div className="flex items-center gap-2 text-violet-400 text-sm py-1">
-                  <Loader size={15} className="animate-spin" />
-                  アップロード中...
+                <div className="flex items-center gap-2 py-1 mt-4 font-mono text-xs tracking-widest uppercase" style={{ color: C.textSub }}>
+                  <Loader size={13} className="animate-spin" />
+                  UPLOADING...
                 </div>
               )}
 
-              {/* タスク作成直後（task未取得） */}
               {step === "submitted" && !task && (
-                <div className="flex items-center gap-2 text-violet-400 text-sm py-1">
-                  <Loader size={15} className="animate-spin" />
-                  処理を開始しています...
+                <div className="flex items-center gap-2 py-1 mt-4 font-mono text-xs tracking-widest uppercase" style={{ color: C.textSub }}>
+                  <Loader size={13} className="animate-spin" />
+                  INITIALIZING...
                 </div>
               )}
 
-              {/* 処理状況 */}
               {task && (
-                <div className="space-y-3">
+                <div className="space-y-3 mt-4">
                   <StepBadge index={2} />
                   <TaskStatus task={task} pollingError={pollingError} />
 
-                  {/* 完了後：モーダルを閉じた場合に再表示ボタン */}
                   {task.status === "COMPLETED" && downloadUrl && !showModal && (
                     <button
                       onClick={() => setShowModal(true)}
-                      className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-600 text-sm font-medium transition-colors"
+                      className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-lg text-xs font-mono font-medium tracking-wider transition-all"
+                      style={{ border: `1px solid ${C.accent}`, color: C.accent, background: "transparent" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(155,107,58,0.08)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
-                      <Sparkles size={14} />
-                      プレビューを再表示
+                      <Sparkles size={12} />
+                      ▶ プレビューを再表示
                     </button>
                   )}
                 </div>
               )}
 
-              {/* 完了 or 失敗時：リセットボタン */}
               {(task?.status === "COMPLETED" || task?.status === "FAILED") && (
                 <button
                   onClick={handleReset}
-                  className="w-full py-3 rounded-2xl border border-lavender-200 hover:bg-lavender-50 text-violet-500 font-medium transition-colors text-sm"
+                  className="w-full mt-3 inline-flex items-center justify-center gap-2 py-3 rounded-lg text-xs font-mono font-medium tracking-wider transition-all"
+                  style={{ border: `1px solid ${C.border}`, color: C.textSub, background: "transparent" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSub; }}
                 >
-                  リセット
+                  ↩ リセット
                 </button>
               )}
             </>
           )}
         </div>
-
-        <p className="text-center text-xs text-violet-300 mt-8">
-          Powered by AWS ECS Fargate · Amazon Bedrock · Strands Agents
-        </p>
       </div>
+
+      {/* Footer */}
+      <p className="text-center text-[10px] py-2 flex-shrink-0" style={{ color: "#4A3F30" }}>
+        Powered by AWS ECS Fargate · Amazon Bedrock · Strands Agents
+      </p>
     </div>
   );
 }

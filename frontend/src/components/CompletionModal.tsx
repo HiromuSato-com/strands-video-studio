@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { X, Download, RotateCcw, Sparkles, Star } from "lucide-react";
+import { X, Download, RotateCcw, Zap } from "lucide-react";
 import { VideoPreview } from "./VideoPreview";
+import { playSound, Snd } from "../lib/snd";
 
 interface Props {
   downloadUrl: string;
@@ -9,16 +10,28 @@ interface Props {
   onReset: () => void;
 }
 
+const C = {
+  bg:        "#121008",
+  accent:    "#9B6B3A",
+  accentHov: "#7D5530",
+  accentHi:  "#D4A96A",
+  card:      "#F3EDE1",
+  border:    "#D4C9B5",
+  textMain:  "#1C1810",
+  textSub:   "#8A7D6A",
+  textMuted: "#B8AC9C",
+  badge:     "#EDE4D4",
+} as const;
+
 export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Props) {
   const filename = outputKey.split("/").pop() ?? "output.mp4";
 
-  // body スクロールをロック
   useEffect(() => {
     document.body.style.overflow = "hidden";
+    playSound(Snd.SOUNDS.TRANSITION_UP);
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // Escape キーで閉じる
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -28,41 +41,53 @@ export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Pr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-modal-backdrop">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/55 backdrop-blur-md"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/65 backdrop-blur-md" onClick={onClose} />
 
       {/* Modal card */}
-      <div className="relative z-10 w-full max-w-2xl bg-white/96 backdrop-blur-sm rounded-3xl shadow-2xl shadow-violet-900/25 border border-violet-100 overflow-hidden animate-modal-in">
+      <div
+        className="relative z-10 w-full max-w-2xl rounded-2xl overflow-hidden animate-modal-in shadow-2xl flex flex-col max-h-[90vh]"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}
+      >
+        {/* Top cartridge stripe */}
+        <div
+          style={{
+            height: "4px",
+            background: `linear-gradient(90deg, ${C.accent} 0%, ${C.accentHi} 55%, ${C.accent} 100%)`,
+          }}
+        />
 
-        {/* ── Celebration header ── */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-violet-600 via-pink-500 to-amber-400 px-6 py-5">
-          {/* Decorative floating sparkles */}
-          <span className="absolute top-2 right-14 text-white/40 animate-float-sparkle" style={{ animationDelay: "0s" }}>
-            <Star size={10} fill="currentColor" />
-          </span>
-          <span className="absolute bottom-2 right-24 text-white/30 animate-float-sparkle" style={{ animationDelay: "0.7s" }}>
-            <Star size={7} fill="currentColor" />
-          </span>
-          <span className="absolute top-3 left-32 text-white/25 animate-float-sparkle" style={{ animationDelay: "1.2s" }}>
-            <Star size={8} fill="currentColor" />
-          </span>
-
+        {/* Header — dark game panel */}
+        <div className="relative px-5 py-3 overflow-hidden" style={{ background: C.bg }}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                <Sparkles size={18} className="text-white animate-pulse" />
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: "rgba(155,107,58,0.18)",
+                  border: "1px solid rgba(155,107,58,0.38)",
+                }}
+              >
+                <Zap size={16} style={{ color: C.accentHi }} />
               </div>
               <div>
-                <p className="text-white/70 text-xs tracking-widest uppercase font-medium">Complete</p>
-                <h2 className="text-white font-bold text-xl leading-tight">動画が完成しました！</h2>
+                <p
+                  className="text-[9px] font-mono tracking-[0.28em] uppercase"
+                  style={{ color: C.textMuted }}
+                >
+                  Mission Complete
+                </p>
+                <h2 className="font-bold text-lg leading-tight" style={{ color: C.card }}>
+                  動画が完成しました！
+                </h2>
               </div>
             </div>
 
             <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/35 text-white transition-all hover:rotate-90 duration-200"
+              onClick={() => { playSound(Snd.SOUNDS.TRANSITION_DOWN); onClose(); }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+              style={{ background: "rgba(255,255,255,0.07)", color: C.textMuted }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
               aria-label="閉じる"
             >
               <X size={16} />
@@ -70,14 +95,19 @@ export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Pr
           </div>
         </div>
 
-        {/* ── Content ── */}
-        <div className="p-5 space-y-4 bg-gradient-to-b from-violet-50/40 to-white">
-          {/* Mac-style window dots */}
-          <div className="flex items-center gap-1.5 -mb-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-300" />
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-300" />
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-300" />
-            <span className="ml-2 text-xs text-violet-300 font-mono">{filename}</span>
+        {/* Content */}
+        <div className="p-4 space-y-4 overflow-y-auto">
+          {/* File label */}
+          <div className="flex items-center gap-2">
+            <span
+              className="text-[9px] font-mono tracking-widest uppercase px-2 py-0.5 rounded"
+              style={{ background: C.badge, color: C.textSub, border: `1px solid ${C.border}` }}
+            >
+              OUTPUT
+            </span>
+            <span className="text-[10px] font-mono truncate" style={{ color: C.textMuted }}>
+              {filename}
+            </span>
           </div>
 
           {/* Video player */}
@@ -88,23 +118,27 @@ export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Pr
             <a
               href={downloadUrl}
               download={filename}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-600 hover:to-teal-500 text-white font-semibold px-5 py-3 rounded-2xl transition-all shadow-lg shadow-emerald-200/60 hover:shadow-emerald-300/60 hover:-translate-y-0.5 active:translate-y-0 duration-150"
+              onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
+              className="flex-1 inline-flex items-center justify-center gap-2 font-semibold px-6 py-4 rounded-lg transition-colors text-sm"
+              style={{ background: C.accent, color: C.card }}
+              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = C.accentHov)}
+              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = C.accent)}
             >
-              <Download size={16} />
+              <Download size={15} />
               ダウンロード
             </a>
             <button
               onClick={onReset}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl border border-violet-200 bg-white hover:bg-violet-50 text-violet-600 font-medium transition-all hover:-translate-y-0.5 active:translate-y-0 duration-150 shadow-sm"
+              className="inline-flex items-center gap-2 px-6 py-4 rounded-lg font-medium transition-colors text-sm"
+              style={{ border: `1px solid ${C.border}`, color: C.textSub, background: "transparent" }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
             >
-              <RotateCcw size={15} />
+              <RotateCcw size={14} />
               新しい創作
             </button>
           </div>
         </div>
-
-        {/* Bottom gradient accent */}
-        <div className="h-1 bg-gradient-to-r from-violet-400 via-pink-400 to-amber-300" />
       </div>
     </div>
   );

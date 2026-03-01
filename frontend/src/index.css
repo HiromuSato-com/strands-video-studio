@@ -2,12 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-.watercolor-bg {
-  background:
-    radial-gradient(ellipse at 15% 15%, rgba(196, 132, 252, 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 20%, rgba(251, 113, 133, 0.10) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 85%, rgba(74, 222, 128, 0.10) 0%, transparent 55%),
-    linear-gradient(150deg, #fdf8f0 0%, #fef9ff 55%, #f0fdf8 100%);
+html, body {
+  min-width: 720px;
 }
 
 /* Completion modal animations */
@@ -40,17 +36,35 @@
 }
 .animate-float-sparkle { animation: float-sparkle 2s ease-in-out infinite; }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
+/* Background — warm dark + subtle diamond geometry */
+.luxury-bg {
+  background-color: #121008;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0px,
+      transparent 23px,
+      rgba(212, 201, 181, 0.055) 23px,
+      rgba(212, 201, 181, 0.055) 24px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0px,
+      transparent 23px,
+      rgba(212, 201, 181, 0.055) 23px,
+      rgba(212, 201, 181, 0.055) 24px
+    );
 }
-::-webkit-scrollbar-track {
-  background: #faf5ff;
+
+/* Game console — START button glow pulse */
+@keyframes btn-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(155,107,58,0.25), 0 4px 14px rgba(6,4,2,0.4); }
+  50%       { box-shadow: 0 0 28px rgba(155,107,58,0.55), 0 6px 22px rgba(6,4,2,0.5); }
 }
-::-webkit-scrollbar-thumb {
-  background: #e9d5ff;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #c084fc;
-}
+.btn-glow-pulse { animation: btn-glow 2.5s ease-in-out infinite; }
+
+/* Custom scrollbar — warm sand */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: #EDE4D4; }
+::-webkit-scrollbar-thumb { background: #C4B49E; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #9B6B3A; }
