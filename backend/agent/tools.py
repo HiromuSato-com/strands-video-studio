@@ -22,6 +22,13 @@ TASK_ID = os.environ["TASK_ID"]
 
 s3 = boto3.client("s3")
 
+# Tracks the most recent output S3 key produced by any tool call
+_last_output_key: str | None = None
+
+
+def get_last_output_key() -> str | None:
+    return _last_output_key
+
 
 def _download_from_s3(key: str, suffix: str = "") -> str:
     """Download a file from S3 to /tmp/ and return the local path."""
@@ -33,8 +40,10 @@ def _download_from_s3(key: str, suffix: str = "") -> str:
 
 def _upload_to_s3(local_path: str, filename: str) -> str:
     """Upload a local file to S3 under tasks/{task_id}/output/ and return the S3 key."""
+    global _last_output_key
     key = f"tasks/{TASK_ID}/output/{filename}"
     s3.upload_file(local_path, S3_BUCKET, key)
+    _last_output_key = key
     logger.info(f"Uploaded {local_path} → s3://{S3_BUCKET}/{key}")
     return key
 

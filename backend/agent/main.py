@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import boto3
 from agent import create_agent
+from tools import get_last_output_key
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,19 +62,12 @@ def main() -> None:
         logger.info(f"Executing instruction: {instruction}")
         result = agent(instruction)
 
-        # Extract output_key from the agent's final response if present
         result_text = str(result)
         logger.info(f"Agent result: {result_text}")
 
-        # Try to extract output_key from the result
-        output_key = None
-        try:
-            import re
-            match = re.search(r'"output_key"\s*:\s*"([^"]+)"', result_text)
-            if match:
-                output_key = match.group(1)
-        except Exception:
-            pass
+        # Retrieve the output key recorded by the last tool upload
+        output_key = get_last_output_key()
+        logger.info(f"output_key from tools: {output_key}")
 
         update_kwargs = {"status": "COMPLETED", "agent_result": result_text[:4000]}
         if output_key:
