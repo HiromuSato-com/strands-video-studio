@@ -6,6 +6,7 @@ import { InstructionBox } from "./components/InstructionBox";
 import { ChatBox } from "./components/ChatBox";
 import { TaskStatus } from "./components/TaskStatus";
 import { CompletionModal } from "./components/CompletionModal";
+import { ChatPreviewModal } from "./components/ChatPreviewModal";
 import { useTaskPoller } from "./hooks/useTaskPoller";
 import {
   getUploadUrl,
@@ -70,6 +71,7 @@ export default function App() {
   });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [previewInstruction, setPreviewInstruction] = useState<string | null>(null);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
 
@@ -157,14 +159,29 @@ export default function App() {
     setChatLoading(true);
     try {
       const res = await confirmChat(chatSessionId);
-      setInstruction(res.instruction);
-      setInstructionMode("direct");
-      playSound(Snd.SOUNDS.CELEBRATION);
+      setPreviewInstruction(res.instruction); // プレビューモーダルを表示
     } catch (e) {
       console.error(e);
     } finally {
       setChatLoading(false);
     }
+  };
+
+  const handlePreviewConfirm = () => {
+    if (previewInstruction) {
+      setInstruction(previewInstruction);
+      setInstructionMode("direct");
+      playSound(Snd.SOUNDS.CELEBRATION);
+    }
+    setPreviewInstruction(null);
+  };
+
+  const handleChatReset = () => {
+    const newId = uuidv4();
+    localStorage.setItem("chat_session_id", newId);
+    setChatSessionId(newId);
+    setChatMessages([]);
+    playSound(Snd.SOUNDS.TAP);
   };
 
   const handleReset = () => {
@@ -203,6 +220,15 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-y-hidden luxury-bg">
+
+      {/* 指示プレビューモーダル */}
+      {previewInstruction !== null && (
+        <ChatPreviewModal
+          instruction={previewInstruction}
+          onConfirm={handlePreviewConfirm}
+          onCancel={() => setPreviewInstruction(null)}
+        />
+      )}
 
       {/* 完成モーダル */}
       {showModal && downloadUrl && downloadKey && (
@@ -280,6 +306,7 @@ export default function App() {
                       messages={chatMessages}
                       onSend={handleChatSend}
                       onConfirm={handleChatConfirm}
+                      onReset={handleChatReset}
                       isLoading={chatLoading}
                       disabled={false}
                     />

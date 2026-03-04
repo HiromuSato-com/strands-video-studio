@@ -14,7 +14,7 @@ video-edit-by-strands-agents/
 │   │   ├── agent.py        # Strands Agent 定義（BedrockModel + system_prompt）
 │   │   ├── tools.py        # @tool デコレータ付き S3 操作・動画ツール群
 │   │   ├── main.py         # Fargate コンテナ エントリポイント（DynamoDB ステータス管理）
-│   │   ├── Dockerfile      # static ffmpeg (mwader/static-ffmpeg) を使用
+│   │   ├── Dockerfile      # static ffmpeg (mwader/static-ffmpeg) + fonts-noto-cjk (CJK フォント)
 │   │   └── requirements.txt
 │   └── lambda/             # API Gateway → Lambda
 │       ├── create_task.py  # POST /tasks — DynamoDB 書き込み + ECS RunTask
@@ -25,7 +25,9 @@ video-edit-by-strands-agents/
 │   └── src/
 │       ├── App.tsx          # メイン 4 ステップ UI（日本語）
 │       ├── api/client.ts    # API Gateway クライアント
-│       ├── components/      # UploadZone, InstructionBox, TaskStatus, CompletionModal, etc.
+│       ├── components/      # UploadZone, InstructionBox, TaskStatus, CompletionModal,
+│       │                    # ChatBox（AI チャットモード）, ChatPreviewModal（確定前プレビュー）,
+│       │                    # VideoPreview, etc.
 │       ├── hooks/useTaskPoller.ts  # タスクポーリング hook
 │       └── lib/             # snd-lib サウンドユーティリティ
 └── infrastructure/          # Terraform（フラット構成、モジュールなし）
@@ -54,9 +56,11 @@ Browser → CloudFront (S3) → React/Vite UI
             ↓  POST /tasks → ECS RunTask
           ECS Fargate (ap-northeast-1)
             └─ Strands Agent (claude-sonnet-4-6, us-east-1)
-               ├─ MoviePy: trim / insert_image / concat
+               ├─ MoviePy: 20種類の動画編集ツール
                ├─ Luma AI Ray 2 (luma.ray-v2:0, us-west-2)
-               └─ Amazon Nova Reel (amazon.nova-reel-v1:0, us-east-1)
+               ├─ Amazon Nova Reel (amazon.nova-reel-v1:0, us-east-1)
+               ├─ Stable Diffusion XL (stability.stable-diffusion-xl-v1, us-east-1)
+               └─ Amazon Polly (ap-northeast-1)
             ↕
           DynamoDB (task status)   S3 (assets, ap-northeast-1)
 ```
@@ -74,6 +78,8 @@ Browser → CloudFront (S3) → React/Vite UI
 | Bedrock (Claude) | us-east-1 | `us.anthropic.claude-sonnet-4-6` |
 | Bedrock (Luma) | us-west-2 | `luma.ray-v2:0` |
 | Bedrock (Nova) | us-east-1 | `amazon.nova-reel-v1:0` |
+| Bedrock (SDXL) | us-east-1 | `stability.stable-diffusion-xl-v1` |
+| Amazon Polly | ap-northeast-1 | 音声合成（generate_speech） |
 | S3 Luma 出力 | us-west-2 | Bedrock コンソール自動作成バケット |
 | S3 Nova 出力 | us-east-1 | Bedrock コンソール自動作成バケット |
 
@@ -108,7 +114,7 @@ Browser → CloudFront (S3) → React/Vite UI
 | `INPUT_KEYS` | create_task.py | JSON 配列の S3 入力キー |
 | `LUMA_S3_BUCKET` | create_task.py | Luma AI 出力バケット（us-west-2） |
 | `NOVA_REEL_S3_BUCKET` | create_task.py | Nova Reel 出力バケット（us-east-1） |
-| `VIDEO_MODEL` | create_task.py | `"luma"` または `"nova_reel"` |
+| `VIDEO_MODEL` | create_task.py | `"luma"` / `"nova_reel"` / `"none"`（AI生成なし編集のみ） |
 
 ## Strands Agents コーディングパターン
 
@@ -198,7 +204,13 @@ aws s3 sync dist/ s3://<frontend-bucket>/ --profile <your-aws-profile>
 - 4 ステップフロー: ファイル選択 → 創作指示入力 → 処理状況 → 結果プレビュー
 - 日本語 UI、温かいリネン系カラーパレット（琥珀・コニャック）
 - `snd-lib` によるサウンドフィードバック（RUNNING/COMPLETED/FAILED で異なる音）
-- AI 動画生成モデル選択 UI（Luma AI Ray 2 / Amazon Nova Reel をカセット風ボタンで切替）
+- AI 動画生成モデル選択 UI（Luma AI Ray 2 / Amazon Nova Reel / なし をカセット風ボタンで切替）
+- `ChatBox.tsx` — AI と対話しながら指示内容を整理するチャットモード
+  - AI 処理中: タイピングドットアニメーション、メッセージリストのボーダーグロー、入力エリア自動無効化
+  - AI メッセージ: マークダウンレンダリング対応（見出し `##`、太字 `**`、斜体 `*`、インラインコード `` ` ``、コードブロック ` ``` ` ）
+  - 会話リセットボタン（新しいセッション ID を生成してチャット履歴をクリア）
+  - 確定ボタン押下時に `ChatPreviewModal` でプレビューを挟んでから指示欄へ反映
+- `ChatPreviewModal.tsx` — 確定前に生成された指示テキストをモーダルで確認・キャンセル可能
 - タスク完了時に `CompletionModal` でプレビュー + ダウンロード
 
 ## DynamoDB タスクステータス遷移
@@ -210,14 +222,37 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 
 ## ツール一覧（backend/agent/tools.py）
 
+### ファイル操作
 | ツール名 | 説明 |
 |---------|------|
 | `list_files` | S3 入力ファイル一覧取得（編集タスクの最初に呼ぶ） |
+
+### 動画編集（MoviePy）
+| ツール名 | 説明 |
+|---------|------|
 | `trim_video` | 動画トリミング（start_sec〜end_sec） |
-| `insert_image` | 動画への画像挿入（指定時間範囲でオーバーレイ） |
-| `concat_videos` | 複数動画の結合 |
-| `generate_video` | Luma AI Ray 2 でテキストから動画生成（5s/9s, 720p/540p） |
-| `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定） |
+| `insert_image` | 動画への画像挿入（指定時間範囲でフルフレームオーバーレイ） |
+| `concat_videos` | 複数動画の順番結合 |
+| `add_text` | 字幕・テロップのオーバーレイ（日本語/CJK対応） |
+| `add_audio` | BGM・効果音を既存音声にミックス |
+| `replace_audio` | 音声トラックを差し替え |
+| `change_speed` | 再生速度変更（スロー・早送り、0.1〜10.0倍） |
+| `fade_in_out` | フェードイン・フェードアウト（映像＋音声） |
+| `crossfade_concat` | クロスフェードトランジション付き動画結合 |
+| `resize_crop` | 解像度変更・クロップ |
+| `rotate_flip` | 回転・反転（左右/上下） |
+| `overlay_image` | 画像の透過合成オーバーレイ（ロゴ・PinP） |
+| `extract_audio` | 音声をMP3で抽出 |
+| `adjust_volume` | 音量調整（0.0〜4.0倍） |
+| `color_filter` | カラーフィルター（grayscale / brightness / contrast） |
+
+### AI 生成
+| ツール名 | 説明 |
+|---------|------|
+| `generate_video` | Luma AI Ray 2 でテキストから動画生成（5s/9s, 720p/540p, us-west-2） |
+| `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定, us-east-1） |
+| `generate_image` | Stable Diffusion XL で画像生成（PNG, us-east-1） |
+| `generate_speech` | Amazon Polly でテキスト音声合成（MP3, ap-northeast-1） |
 
 ## よくあるトラブル
 
