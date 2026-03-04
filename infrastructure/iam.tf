@@ -181,6 +181,22 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_iam_role.ecs_task.arn,
         ]
       },
+      {
+        Sid    = "ChatDynamoDBAccess"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = aws_dynamodb_table.chat_sessions.arn
+      },
+      {
+        Sid      = "BedrockConverse"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = "*"
+      },
     ]
   })
 }

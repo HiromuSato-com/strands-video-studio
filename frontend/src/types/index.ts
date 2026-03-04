@@ -25,3 +25,17 @@ export interface DownloadUrlResponse {
   download_url: string;
   output_key: string;
 }
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatMessageResponse {
+  reply: string;
+  messages: ChatMessage[];
+}
+
+export interface ChatConfirmResponse {
+  instruction: string;
+}

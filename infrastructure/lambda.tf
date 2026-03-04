@@ -33,6 +33,12 @@ data "archive_file" "download_url" {
   output_path = "${path.module}/.lambda_zips/download_url.zip"
 }
 
+data "archive_file" "chat" {
+  type        = "zip"
+  source_file = "${local.lambda_src_dir}/chat.py"
+  output_path = "${path.module}/.lambda_zips/chat.zip"
+}
+
 # ─── Lambda functions ─────────────────────────────────────────────────────────
 resource "aws_lambda_function" "upload_url" {
   function_name    = "${var.project_name}-upload-url"
@@ -135,6 +141,33 @@ resource "aws_lambda_permission" "download_url" {
   statement_id  = "AllowAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.download_url.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_function" "chat" {
+  function_name    = "${var.project_name}-chat"
+  role             = aws_iam_role.lambda.arn
+  handler          = "chat.handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.chat.output_path
+  source_code_hash = data.archive_file.chat.output_base64sha256
+  timeout          = 30
+
+  environment {
+    variables = merge(local.lambda_common_env, {
+      CHAT_TABLE     = aws_dynamodb_table.chat_sessions.name
+      BEDROCK_REGION = "us-east-1"
+    })
+  }
+
+  tags = { Project = var.project_name }
+}
+
+resource "aws_lambda_permission" "chat" {
+  statement_id  = "AllowAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.chat.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }

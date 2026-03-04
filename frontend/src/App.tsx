@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard } from "lucide-react";
+import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
+import { ChatBox } from "./components/ChatBox";
 import { TaskStatus } from "./components/TaskStatus";
 import { CompletionModal } from "./components/CompletionModal";
 import { useTaskPoller } from "./hooks/useTaskPoller";
@@ -11,11 +12,15 @@ import {
   uploadFileToS3,
   createTask,
   getDownloadUrl,
+  sendChatMessage,
+  confirmChat,
 } from "./api/client";
+import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
 type VideoModel = "luma" | "nova_reel" | "none";
+type InstructionMode = "direct" | "chat";
 
 interface UploadProgress {
   filename: string;
@@ -54,6 +59,17 @@ export default function App() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [downloadKey, setDownloadKey] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+
+  const [instructionMode, setInstructionMode] = useState<InstructionMode>("direct");
+  const [chatSessionId, setChatSessionId] = useState<string>(() => {
+    const stored = localStorage.getItem("chat_session_id");
+    if (stored) return stored;
+    const id = uuidv4();
+    localStorage.setItem("chat_session_id", id);
+    return id;
+  });
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
 
@@ -125,6 +141,32 @@ export default function App() {
     }
   };
 
+  const handleChatSend = async (message: string) => {
+    setChatLoading(true);
+    try {
+      const res = await sendChatMessage(chatSessionId, message);
+      setChatMessages(res.messages);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleChatConfirm = async () => {
+    setChatLoading(true);
+    try {
+      const res = await confirmChat(chatSessionId);
+      setInstruction(res.instruction);
+      setInstructionMode("direct");
+      playSound(Snd.SOUNDS.CELEBRATION);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const handleReset = () => {
     playSound(Snd.SOUNDS.TAP);
     setFiles([]);
@@ -137,6 +179,12 @@ export default function App() {
     setDownloadUrl(null);
     setDownloadKey(null);
     setShowModal(false);
+    const newId = uuidv4();
+    localStorage.setItem("chat_session_id", newId);
+    setChatSessionId(newId);
+    setChatMessages([]);
+    setInstructionMode("direct");
+    setChatLoading(false);
   };
 
   const StepBadge = ({ index }: { index: number }) => {
@@ -201,7 +249,42 @@ export default function App() {
               {/* 右カラム */}
               <div className="flex flex-col gap-4 min-h-0 min-w-0 pl-8" style={{ borderLeft: `1px solid ${C.border}` }}>
                 <StepBadge index={1} />
-                <InstructionBox value={instruction} onChange={setInstruction} disabled={false} />
+
+                {/* モード切替タブ */}
+                <div className="flex rounded-lg overflow-hidden flex-shrink-0" style={{ border: `1px solid ${C.border}` }}>
+                  {(["direct", "chat"] as const).map((mode) => {
+                    const active = instructionMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setInstructionMode(mode)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium transition-colors"
+                        style={{
+                          background: active ? C.accent : "transparent",
+                          color: active ? "#FFF" : C.textSub,
+                        }}
+                      >
+                        {mode === "direct" ? <PenLine size={11} /> : <MessageSquare size={11} />}
+                        {mode === "direct" ? "直接入力" : "AIとチャットで作成"}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex-1 min-h-0 flex flex-col">
+                  {instructionMode === "direct" ? (
+                    <InstructionBox value={instruction} onChange={setInstruction} disabled={false} />
+                  ) : (
+                    <ChatBox
+                      messages={chatMessages}
+                      onSend={handleChatSend}
+                      onConfirm={handleChatConfirm}
+                      isLoading={chatLoading}
+                      disabled={false}
+                    />
+                  )}
+                </div>
 
                 {/* モデル選択 — カセット選択UI */}
                 <div>

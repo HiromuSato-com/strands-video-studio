@@ -73,3 +73,16 @@ resource "aws_apigatewayv2_route" "download_url" {
   route_key = "GET /download-url/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.download_url.id}"
 }
+
+resource "aws_apigatewayv2_integration" "chat" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.chat.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "chat" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /chat"
+  target    = "integrations/${aws_apigatewayv2_integration.chat.id}"
+}
