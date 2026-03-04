@@ -83,8 +83,8 @@ Browser → CloudFront (S3) → React/Vite UI
 |-----------|-----------|------|
 | `video-edit-assets-{account}` | ap-northeast-1 | Terraform |
 | `video-edit-frontend-{account}` | ap-northeast-1 | Terraform |
-| `bedrock-video-generation-us-west-2-7rfhed` | us-west-2 | Bedrock 自動作成（data source 参照） |
-| `bedrock-video-generation-us-east-1-eynjzo` | us-east-1 | Bedrock 自動作成（data source 参照） |
+| `bedrock-video-generation-us-west-2-{id}` | us-west-2 | Bedrock 自動作成（data source 参照） |
+| `bedrock-video-generation-us-east-1-{id}` | us-east-1 | Bedrock 自動作成（data source 参照） |
 
 バケット名は `infrastructure/variables.tf` の `luma_s3_bucket_name` / `nova_reel_s3_bucket_name` で管理。
 
@@ -154,7 +154,7 @@ terraform apply
 ### 3. Docker ビルド & ECR プッシュ
 ```bash
 # ECR ログイン（プロファイル名は適宜変更）
-aws ecr get-login-password --region ap-northeast-1 --profile AWSAdministratorAccess-595351378921 \
+aws ecr get-login-password --region ap-northeast-1 --profile <your-aws-profile> \
   | docker login --username AWS --password-stdin <account>.dkr.ecr.ap-northeast-1.amazonaws.com
 
 # ビルド（Windows プロキシを無効化）
@@ -174,7 +174,7 @@ cd frontend
 # frontend/.env に VITE_API_URL=<api_url> を設定
 npm install --no-proxy
 npm run build
-aws s3 sync dist/ s3://<frontend-bucket>/ --profile AWSAdministratorAccess-595351378921
+aws s3 sync dist/ s3://<frontend-bucket>/ --profile <your-aws-profile>
 ```
 
 ## ローカル開発メモ（Windows / Git Bash）
@@ -188,7 +188,7 @@ aws s3 sync dist/ s3://<frontend-bucket>/ --profile AWSAdministratorAccess-59535
 
 ## Terraform 変数ファイル
 
-- `infrastructure/terraform.tfvars` — 実際の値（git 管理、secrets は含まない）
+- `infrastructure/terraform.tfvars` — 実際の値（`.gitignore` で除外済み、git 管理外）
 - `infrastructure/terraform.tfvars.example` — サンプル（git 管理）
 - バケット名変更時は `variables.tf` の `luma_s3_bucket_name` / `nova_reel_s3_bucket_name` を更新してから `terraform apply`
 

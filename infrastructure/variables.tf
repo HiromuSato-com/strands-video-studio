@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "aws_profile" {
   description = "AWS CLI profile name"
   type        = string
-  default     = "AWSAdministratorAccess-595351378921"
+  default     = "default"
 }
 
 variable "project_name" {
@@ -29,13 +29,13 @@ variable "bedrock_region" {
 }
 
 variable "luma_s3_bucket_name" {
-  description = "Existing S3 bucket name (us-west-2) created by Bedrock console for Luma AI Ray 2 output"
+  description = "Existing S3 bucket name (us-west-2) created by Bedrock console for Luma AI Ray 2 output. Enable luma.ray-v2:0 in Bedrock console (us-west-2) to auto-create this bucket."
   type        = string
-  default     = "bedrock-video-generation-us-west-2-7rfhed"
+  default     = ""
 }
 
 variable "nova_reel_s3_bucket_name" {
-  description = "Existing S3 bucket name (us-east-1) created by Bedrock console for Amazon Nova Reel output"
+  description = "Existing S3 bucket name (us-east-1) created by Bedrock console for Amazon Nova Reel output. Enable amazon.nova-reel-v1:0 in Bedrock console (us-east-1) to auto-create this bucket."
   type        = string
-  default     = "bedrock-video-generation-us-east-1-eynjzo"
+  default     = ""
 }
