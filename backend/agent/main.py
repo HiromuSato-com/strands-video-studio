@@ -55,8 +55,9 @@ def main() -> None:
     # Append model hint so the agent picks the correct generation tool
     if video_model == "nova_reel":
         instruction += "\n[AI動画生成モデル: Amazon Nova Reel]"
-    else:
+    elif video_model == "luma":
         instruction += "\n[AI動画生成モデル: Luma AI Ray 2]"
+    # "none": no tag appended — agent uses editing tools only
 
     dynamodb = boto3.resource("dynamodb")
     table = dynamodb.Table(dynamodb_table_name)

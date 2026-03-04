@@ -107,6 +107,12 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         ]
         Resource = aws_dynamodb_table.tasks.arn
       },
+      {
+        Sid      = "PollyAccess"
+        Effect   = "Allow"
+        Action   = ["polly:SynthesizeSpeech"]
+        Resource = "*"
+      },
     ]
   })
 }

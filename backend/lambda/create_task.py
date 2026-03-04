@@ -38,8 +38,8 @@ def handler(event, context):
     instruction = body.get("instruction", "").strip()
     input_keys = body.get("input_keys", [])
     video_model = body.get("video_model", "luma")
-    if video_model not in ("luma", "nova_reel"):
-        video_model = "luma"
+    if video_model not in ("luma", "nova_reel", "none"):
+        video_model = "none"
 
     if not task_id:
         return error_response(400, "task_id is required")

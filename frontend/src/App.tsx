@@ -15,7 +15,7 @@ import {
 import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
-type VideoModel = "luma" | "nova_reel";
+type VideoModel = "luma" | "nova_reel" | "none";
 
 interface UploadProgress {
   filename: string;
@@ -46,7 +46,7 @@ const STEP_LABELS = [
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [instruction, setInstruction] = useState("");
-  const [videoModel, setVideoModel] = useState<VideoModel>("luma");
+  const [videoModel, setVideoModel] = useState<VideoModel>("none");
   const [step, setStep] = useState<AppStep>("idle");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
@@ -129,7 +129,7 @@ export default function App() {
     playSound(Snd.SOUNDS.TAP);
     setFiles([]);
     setInstruction("");
-    setVideoModel("luma");
+    setVideoModel("none");
     setStep("idle");
     setTaskId(null);
     setUploadProgress([]);
@@ -211,6 +211,12 @@ export default function App() {
                   </p>
                   <div className="flex gap-2">
                     {([
+                      {
+                        value: "none" as VideoModel,
+                        label: "使用しない",
+                        desc: "動画編集のみ",
+                        stripe: "linear-gradient(90deg, #8A7D6A 0%, #B8AC9C 60%, #9A8D7C 100%)",
+                      },
                       {
                         value: "luma" as VideoModel,
                         label: "Luma AI Ray 2",
@@ -306,9 +312,11 @@ export default function App() {
                       {f.name}
                     </span>
                   ))}
-                  <span className="text-[10px]" style={{ color: C.textMuted }}>
-                    {videoModel === "luma" ? "Luma AI Ray 2" : "Amazon Nova Reel"}
-                  </span>
+                  {videoModel !== "none" && (
+                    <span className="text-[10px]" style={{ color: C.textMuted }}>
+                      {videoModel === "luma" ? "Luma AI Ray 2" : "Amazon Nova Reel"}
+                    </span>
+                  )}
                 </div>
                 </div>
               </div>
