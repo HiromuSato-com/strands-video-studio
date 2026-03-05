@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare } from "lucide-react";
+import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare, Edit3 } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
-import { ChatBox } from "./components/ChatBox";
 import { TaskStatus } from "./components/TaskStatus";
 import { CompletionModal } from "./components/CompletionModal";
 import { ChatPreviewModal } from "./components/ChatPreviewModal";
+import { ChatModal } from "./components/ChatModal";
+import { Stepper } from "./components/Stepper";
+import { WelcomeModal, shouldShowWelcome } from "./components/WelcomeModal";
 import { useTaskPoller } from "./hooks/useTaskPoller";
 import {
   getUploadUrl,
@@ -21,7 +23,6 @@ import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
 type VideoModel = "luma" | "nova_reel" | "none";
-type InstructionMode = "direct" | "chat";
 
 interface UploadProgress {
   filename: string;
@@ -33,8 +34,9 @@ const C = {
   bg:          "#121008",  // 深い琥珀の暗闇
   card:        "#F3EDE1",  // リネン
   border:      "#D4C9B5",  // 砂
-  accent:      "#9B6B3A",  // コニャック
+  accent:      "#8B5E34",  // コニャック（濃くしてコントラスト改善）
   accentHover: "#7D5530",
+  accentDisabled: "#C4B8A8",  // disabled 状態用グレー
   textMain:    "#1C1810",  // 温かい黒
   textSub:     "#8A7D6A",  // 温かい中間
   textMuted:   "#B8AC9C",  // 温かい薄
@@ -61,17 +63,17 @@ export default function App() {
   const [downloadKey, setDownloadKey] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const [instructionMode, setInstructionMode] = useState<InstructionMode>("direct");
-  const [chatSessionId, setChatSessionId] = useState<string>(() => {
-    const stored = localStorage.getItem("chat_session_id");
-    if (stored) return stored;
-    const id = uuidv4();
-    localStorage.setItem("chat_session_id", id);
-    return id;
-  });
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState<string>(() => uuidv4());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [previewInstruction, setPreviewInstruction] = useState<string | null>(null);
+
+  // ウェルカムモーダル（初回のみ）
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => shouldShowWelcome());
+
+  // 指示入力エリアへのフォーカス ref（スキップリンク用）
+  const instructionRef = useRef<HTMLDivElement>(null);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
 
@@ -144,12 +146,16 @@ export default function App() {
   };
 
   const handleChatSend = async (message: string) => {
+    // 送信直後にユーザーメッセージを即時表示（楽観的更新）
+    setChatMessages(prev => [...prev, { role: "user", content: message }]);
     setChatLoading(true);
     try {
       const res = await sendChatMessage(chatSessionId, message);
       setChatMessages(res.messages);
     } catch (e) {
       console.error(e);
+      // 失敗時は楽観的に追加したメッセージを取り消す
+      setChatMessages(prev => prev.slice(0, -1));
     } finally {
       setChatLoading(false);
     }
@@ -170,16 +176,14 @@ export default function App() {
   const handlePreviewConfirm = () => {
     if (previewInstruction) {
       setInstruction(previewInstruction);
-      setInstructionMode("direct");
+      setShowChatModal(false);
       playSound(Snd.SOUNDS.CELEBRATION);
     }
     setPreviewInstruction(null);
   };
 
   const handleChatReset = () => {
-    const newId = uuidv4();
-    localStorage.setItem("chat_session_id", newId);
-    setChatSessionId(newId);
+    setChatSessionId(uuidv4());
     setChatMessages([]);
     playSound(Snd.SOUNDS.TAP);
   };
@@ -196,11 +200,9 @@ export default function App() {
     setDownloadUrl(null);
     setDownloadKey(null);
     setShowModal(false);
-    const newId = uuidv4();
-    localStorage.setItem("chat_session_id", newId);
-    setChatSessionId(newId);
+    setChatSessionId(uuidv4());
     setChatMessages([]);
-    setInstructionMode("direct");
+    setShowChatModal(false);
     setChatLoading(false);
   };
 
@@ -218,8 +220,15 @@ export default function App() {
     );
   };
 
+  const isSubmitDisabled = !instruction.trim();
+
   return (
     <div className="h-screen flex flex-col overflow-y-hidden luxury-bg">
+
+      {/* ウェルカムモーダル（初回のみ） */}
+      {showWelcome && (
+        <WelcomeModal onClose={() => setShowWelcome(false)} />
+      )}
 
       {/* 指示プレビューモーダル */}
       {previewInstruction !== null && (
@@ -240,22 +249,49 @@ export default function App() {
         />
       )}
 
-      {/* Header */}
-      <div className="text-center py-2.5 flex-shrink-0" style={{ borderBottom: `1px solid #2A2318` }}>
-        <h1 className="font-klee text-xl font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
+      {/* チャットモーダル */}
+      {showChatModal && (
+        <ChatModal
+          messages={chatMessages}
+          onSend={handleChatSend}
+          onConfirm={handleChatConfirm}
+          onReset={handleChatReset}
+          isLoading={chatLoading}
+          onClose={() => setShowChatModal(false)}
+        />
+      )}
+
+      {/* Header — 1行 */}
+      <div
+        className="flex items-center justify-between px-6 py-1.5 flex-shrink-0"
+        style={{ borderBottom: `1px solid #2A2318` }}
+      >
+        <h1 className="font-klee text-lg font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
           AI 創作スタジオ
         </h1>
-        <p className="text-[11px] mt-0.5 flex items-center justify-center gap-1.5" style={{ color: C.textSub }}>
-          <Palette size={11} />
-          Strands Agents · Claude Sonnet · MoviePy
+        <p className="text-[10px] flex items-center gap-1.5" style={{ color: "#4A3F30" }}>
+          <Palette size={10} />
+          Strands Agents · Claude Sonnet · Bedrock · ECS Fargate
         </p>
       </div>
 
+      {/* Stepper — ヘッダーとカードの間 */}
+      {step === "idle" && (
+        <div className="flex-shrink-0 pt-2">
+          <Stepper
+            hasFiles={files.length > 0}
+            hasInstruction={instruction.trim().length > 0}
+            hasModel={videoModel !== "none"}
+            isSubmitted={false}
+          />
+        </div>
+      )}
+
       {/* Main container */}
-      <div className="max-w-5xl w-full mx-auto flex-1 overflow-hidden px-6 pb-4 pt-3">
+      <div className="max-w-7xl w-full mx-auto flex-1 overflow-hidden px-4 pb-3 pt-1">
         {/* Card — リネン */}
         <div
-          className="p-5 h-full flex flex-col rounded-xl shadow-2xl"
+          className="p-3 h-full flex flex-col rounded-xl shadow-2xl"
           style={{
             background: C.card,
             border: `1px solid ${C.border}`,
@@ -264,133 +300,186 @@ export default function App() {
         >
 
           {step === "idle" ? (
-            <div className="flex-1 overflow-hidden grid grid-cols-[2fr_3fr] gap-8">
+            <div className="flex-1 overflow-hidden grid grid-cols-[1.4fr_2fr_1.3fr] gap-3 min-h-0">
 
-              {/* 左カラム */}
-              <div className="flex flex-col gap-4 min-h-0 min-w-0">
-                <StepBadge index={0} />
+              {/* 左カラム — ファイル選択 */}
+              <div className="flex flex-col gap-3 min-h-0 min-w-0">
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <StepBadge index={0} />
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: C.badge, color: C.textMuted, border: `1px solid ${C.border}` }}
+                  >
+                    任意
+                  </span>
+                </div>
                 <UploadZone onFilesSelected={setFiles} disabled={false} className="flex-1 min-h-0" />
+                {files.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      instructionRef.current?.querySelector("textarea")?.focus();
+                    }}
+                    className="text-xs underline self-start transition-colors flex-shrink-0"
+                    style={{ color: C.textMuted }}
+                    onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
+                    onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                  >
+                    スキップ（テキストから生成）
+                  </button>
+                )}
               </div>
 
-              {/* 右カラム */}
-              <div className="flex flex-col gap-4 min-h-0 min-w-0 pl-8" style={{ borderLeft: `1px solid ${C.border}` }}>
-                <StepBadge index={1} />
-
-                {/* モード切替タブ */}
-                <div className="flex rounded-lg overflow-hidden flex-shrink-0" style={{ border: `1px solid ${C.border}` }}>
-                  {(["direct", "chat"] as const).map((mode) => {
-                    const active = instructionMode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setInstructionMode(mode)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium transition-colors"
-                        style={{
-                          background: active ? C.accent : "transparent",
-                          color: active ? "#FFF" : C.textSub,
-                        }}
-                      >
-                        {mode === "direct" ? <PenLine size={11} /> : <MessageSquare size={11} />}
-                        {mode === "direct" ? "直接入力" : "AIとチャットで作成"}
-                      </button>
-                    );
-                  })}
+              {/* 中カラム — 指示入力 */}
+              <div
+                ref={instructionRef}
+                className="flex flex-col gap-3 min-h-0 min-w-0 px-4"
+                style={{ borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}
+              >
+                {/* モード切替セグメント */}
+                <div
+                  className="flex rounded-lg overflow-hidden flex-shrink-0"
+                  style={{ border: `1px solid ${C.border}` }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowChatModal(false)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
+                    style={{
+                      background: !showChatModal ? C.accent : "transparent",
+                      color: !showChatModal ? C.card : C.textSub,
+                    }}
+                  >
+                    <Edit3 size={11} />
+                    直接入力
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatModal(true)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
+                    style={{
+                      background: showChatModal ? C.accent : "transparent",
+                      color: showChatModal ? C.card : C.textSub,
+                      borderLeft: `1px solid ${C.border}`,
+                    }}
+                  >
+                    <MessageSquare size={11} />
+                    AIと相談しながら作成
+                  </button>
                 </div>
 
                 <div className="flex-1 min-h-0 flex flex-col">
-                  {instructionMode === "direct" ? (
-                    <InstructionBox value={instruction} onChange={setInstruction} disabled={false} />
-                  ) : (
-                    <ChatBox
-                      messages={chatMessages}
-                      onSend={handleChatSend}
-                      onConfirm={handleChatConfirm}
-                      onReset={handleChatReset}
-                      isLoading={chatLoading}
-                      disabled={false}
-                    />
+                  <InstructionBox
+                    value={instruction}
+                    onChange={setInstruction}
+                    disabled={false}
+                    hasFiles={files.length > 0}
+                  />
+                </div>
+              </div>
+
+              {/* 右カラム — モデル選択 + 送信 */}
+              <div className="flex flex-col gap-3 min-h-0 min-w-0">
+                <div className="flex flex-col gap-1.5 flex-shrink-0">
+                  <label className="text-xs flex items-center gap-1.5" style={{ color: C.textSub }}>
+                    <Clapperboard size={12} />
+                    AI動画生成モデル
+                  </label>
+                  <select
+                    value={videoModel}
+                    onChange={e => {
+                      const v = e.target.value as VideoModel;
+                      if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
+                      setVideoModel(v);
+                    }}
+                    className="w-full rounded-lg px-3 py-2 text-xs outline-none cursor-pointer transition-colors"
+                    style={{
+                      background: C.card,
+                      border: `1px solid ${C.border}`,
+                      color: C.textMain,
+                      appearance: "none",
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A7D6A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "right 10px center",
+                      paddingRight: "28px",
+                    }}
+                    onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+                    onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+                  >
+                    <option value="none">使用しない</option>
+                    <option value="luma">Luma AI Ray 2</option>
+                    <option value="nova_reel">Amazon Nova Reel</option>
+                  </select>
+
+                  {/* モデル情報パネル */}
+                  {videoModel !== "none" && (
+                    <div
+                      className="rounded-lg p-2.5 space-y-1.5 flex-shrink-0"
+                      style={{ background: C.badge, border: `1px solid ${C.border}` }}
+                    >
+                      {videoModel === "luma" && (
+                        <>
+                          <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
+                            🎬 Luma AI Ray 2 の特徴
+                          </p>
+                          <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
+                            <li>✦ 流体・煙・滝など複雑な物理現象を高精度にレンダリング</li>
+                            <li>✦ 人物の微妙な表情・手の動き・自然なボディランゲージの再現に優れる</li>
+                            <li>✦ スケール・遠近法・細部まで忠実に映像化する高い指示実行能力</li>
+                            <li>✦ プロモーション動画・製品モックアップ・VFX プレビズに最適</li>
+                          </ul>
+                          <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
+                            5s / 9s　540p〜720p　生成: 約2〜8分
+                          </p>
+                        </>
+                      )}
+                      {videoModel === "nova_reel" && (
+                        <>
+                          <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
+                            🎬 Amazon Nova Reel の特徴
+                          </p>
+                          <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
+                            <li>✦ カメラアングル・動きのコントロールが優れており、テンポ感のある映像演出が可能</li>
+                            <li>✦ ロゴやビジュアルアイデンティティをシーン全体で一貫して保持し、ブランド動画制作に強い</li>
+                            <li>✦ 製品中心のナラティブや企業ブランドのストーリーテリングに最適</li>
+                            <li>✦ 短尺シーンを低コストで量産でき、ストーリーボード検討の反復に向く</li>
+                          </ul>
+                          <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
+                            最大6s（〜120s）　1280×720固定　生成: 約90秒〜
+                          </p>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {/* モデル選択 — カセット選択UI */}
-                <div>
-                  <p className="text-xs mb-2 flex items-center gap-1.5" style={{ color: C.textSub }}>
-                    <Clapperboard size={12} />
-                    AI動画生成モデル
-                  </p>
-                  <div className="flex gap-2">
-                    {([
-                      {
-                        value: "none" as VideoModel,
-                        label: "使用しない",
-                        desc: "動画編集のみ",
-                        stripe: "linear-gradient(90deg, #8A7D6A 0%, #B8AC9C 60%, #9A8D7C 100%)",
-                      },
-                      {
-                        value: "luma" as VideoModel,
-                        label: "Luma AI Ray 2",
-                        desc: "5s / 9s · 多彩なアスペクト比",
-                        stripe: "linear-gradient(90deg, #9B6B3A 0%, #D4A96A 60%, #C49050 100%)",
-                      },
-                      {
-                        value: "nova_reel" as VideoModel,
-                        label: "Amazon Nova Reel",
-                        desc: "最大6s · 1280×720固定",
-                        stripe: "linear-gradient(90deg, #4A6070 0%, #7A9AAE 60%, #5A8098 100%)",
-                      },
-                    ] as const).map((m) => {
-                      const active = videoModel === m.value;
-                      return (
-                        <button
-                          key={m.value}
-                          type="button"
-                          onClick={() => {
-                            if (videoModel !== m.value) playSound(Snd.SOUNDS.TOGGLE_ON);
-                            setVideoModel(m.value);
-                          }}
-                          className="flex-1 text-left rounded-lg overflow-hidden cursor-pointer transition-all duration-200"
-                          style={{
-                            border: `1.5px solid ${active ? C.accent : C.border}`,
-                            background: active ? C.card : "rgba(243,237,225,0.45)",
-                            boxShadow: active
-                              ? `0 0 20px rgba(155,107,58,0.35), 0 2px 8px rgba(6,4,2,0.3)`
-                              : `0 1px 4px rgba(6,4,2,0.15)`,
-                          }}
-                        >
-                          {/* カセットラベルのカラーストライプ */}
-                          <div style={{ height: "4px", background: m.stripe }} />
-                          <div className="px-3 py-2">
-                            <span className="font-semibold block text-sm" style={{ color: C.textMain }}>
-                              {m.label}
-                            </span>
-                            <span className="text-xs" style={{ color: C.textSub }}>
-                              {m.desc}
-                            </span>
-                            {active && (
-                              <span className="text-[10px] tracking-[0.15em] uppercase mt-1.5 block" style={{ color: C.accent }}>
-                                ▶ selected
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 {submitError && (
-                  <p className="text-xs border px-3 py-2 rounded-lg" style={{ color: "#9B2C2C", background: "#FFF5F5", borderColor: "#FEB2B2" }}>
+                  <p className="text-xs border px-3 py-2 rounded-lg flex-shrink-0" style={{ color: "#9B2C2C", background: "#FFF5F5", borderColor: "#FEB2B2" }}>
                     {submitError}
                   </p>
                 )}
 
                 <button
                   onClick={handleSubmit}
-                  className="mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-colors btn-glow-pulse text-sm"
-                  style={{ background: C.accent, color: C.card }}
-                  onMouseEnter={e => (e.currentTarget.style.background = C.accentHover)}
-                  onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
+                  disabled={isSubmitDisabled}
+                  title={isSubmitDisabled ? "創作指示を入力してください" : undefined}
+                  className="mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 text-sm flex-shrink-0"
+                  style={{
+                    background: isSubmitDisabled ? C.accentDisabled : C.accent,
+                    color: C.card,
+                    cursor: isSubmitDisabled ? "not-allowed" : "pointer",
+                    transition: "background 0.15s, transform 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSubmitDisabled) {
+                      e.currentTarget.style.background = C.accentHover;
+                      e.currentTarget.style.transform = "scale(1.02)";
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = isSubmitDisabled ? C.accentDisabled : C.accent;
+                    e.currentTarget.style.transform = "scale(1)";
+                  }}
                 >
                   <Sparkles size={16} />
                   創作を開始
@@ -474,7 +563,7 @@ export default function App() {
                       onClick={() => setShowModal(true)}
                       className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-lg text-xs font-mono font-medium tracking-wider transition-all"
                       style={{ border: `1px solid ${C.accent}`, color: C.accent, background: "transparent" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(155,107,58,0.08)")}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(139,94,52,0.08)")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <Sparkles size={12} />
@@ -500,10 +589,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Footer */}
-      <p className="text-center text-[10px] py-2 flex-shrink-0" style={{ color: "#4A3F30" }}>
-        Powered by AWS ECS Fargate · Amazon Bedrock · Strands Agents
-      </p>
     </div>
   );
 }

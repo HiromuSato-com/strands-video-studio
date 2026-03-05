@@ -26,7 +26,8 @@ video-edit-by-strands-agents/
 │       ├── App.tsx          # メイン 4 ステップ UI（日本語）
 │       ├── api/client.ts    # API Gateway クライアント
 │       ├── components/      # UploadZone, InstructionBox, TaskStatus, CompletionModal,
-│       │                    # ChatBox（AI チャットモード）, ChatPreviewModal（確定前プレビュー）,
+│       │                    # ChatModal（AI チャットモード）, ChatPreviewModal（確定前プレビュー）,
+│       │                    # Stepper（水平ステッパー）, WelcomeModal（初回オンボーディング）,
 │       │                    # VideoPreview, etc.
 │       ├── hooks/useTaskPoller.ts  # タスクポーリング hook
 │       └── lib/             # snd-lib サウンドユーティリティ
@@ -201,15 +202,29 @@ aws s3 sync dist/ s3://<frontend-bucket>/ --profile <your-aws-profile>
 ## フロントエンド UI 設計
 
 - React + Vite + TypeScript + TailwindCSS
-- 4 ステップフロー: ファイル選択 → 創作指示入力 → 処理状況 → 結果プレビュー
-- 日本語 UI、温かいリネン系カラーパレット（琥珀・コニャック）
+- 4 ステップフロー: ファイル選択（任意）→ 創作指示入力 → 処理状況 → 結果プレビュー
+- 日本語 UI、温かいリネン系カラーパレット（琥珀・コニャック、accent: `#8B5E34`）
 - `snd-lib` によるサウンドフィードバック（RUNNING/COMPLETED/FAILED で異なる音）
-- AI 動画生成モデル選択 UI（Luma AI Ray 2 / Amazon Nova Reel / なし をカセット風ボタンで切替）
-- `ChatBox.tsx` — AI と対話しながら指示内容を整理するチャットモード
+- `Stepper.tsx` — ヘッダー直下に表示する水平ステッパー（4ステップ、完了/アクティブ/未来の状態を視覚化）
+- `WelcomeModal.tsx` — 初回アクセス時のみ表示する 3 スライドオンボーディングモーダル
+  - `localStorage: "welcome_shown_v1"` で表示済み管理
+- `InstructionBox.tsx` — 創作指示入力エリア
+  - サンプルプロンプトを「編集系」「生成系」に分類し、`hasFiles` prop でファイルあり→編集系優先、なし→生成系優先
+  - 「↓ クリックで入力できます」ラベル、「何を作りたいか自由に書いてください」補足テキスト
+- 左カラム（ファイル選択）に「任意」バッジ + ファイル 0 件時に「スキップ（テキストから生成）」リンク
+- 中カラム上部にセグメントコントロール（「直接入力」/「AIと相談しながら作成」）でモード切替
+- CTA ボタン（「創作を開始」）: `instruction` が空の場合 `disabled`（`#C4B8A8` グレー）、入力済みで hover 時 `scale(1.02)`
+- AI 動画生成モデル選択ドロップダウン — モデル選択時にその特徴パネルを直下に表示
+  - Luma AI Ray 2: 物理・人物表現・映画的映像の強みを箇条書き
+  - Amazon Nova Reel: ブランド一貫性・カメラコントロール・短尺量産の強みを箇条書き
+- `ChatModal.tsx` — AI と対話しながら指示内容を整理するチャットモーダル
   - AI 処理中: タイピングドットアニメーション、メッセージリストのボーダーグロー、入力エリア自動無効化
   - AI メッセージ: マークダウンレンダリング対応（見出し `##`、太字 `**`、斜体 `*`、インラインコード `` ` ``、コードブロック ` ``` ` ）
+  - ユーザーメッセージを送信直後に楽観的表示（API レスポンス待ちでも即時表示）、エラー時はロールバック
   - 会話リセットボタン（新しいセッション ID を生成してチャット履歴をクリア）
   - 確定ボタン押下時に `ChatPreviewModal` でプレビューを挟んでから指示欄へ反映
+  - `chatSessionId` は localStorage に保存せずアプリ起動ごとに新規生成（ページリロードで自動的に新セッション開始）
+  - チャット会話履歴はサーバー側 DynamoDB（`CHAT_TABLE`）に `session_id` キーで保存（`backend/lambda/chat.py`）
 - `ChatPreviewModal.tsx` — 確定前に生成された指示テキストをモーダルで確認・キャンセル可能
 - タスク完了時に `CompletionModal` でプレビュー + ダウンロード
 
@@ -264,3 +279,5 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 | `python3: command not found` | Git Bash では `python` を使う |
 | ECS ログが文字化け | `MSYS_NO_PATHCONV=1` + UTF-8 デコードスクリプトを使う |
 | Bedrock モデルが見つからない | 対象リージョンでモデルを有効化済みか確認 |
+| チャットモーダルでメッセージリストがスクロールできない | `ChatModal.tsx` の wrapper div に `flex flex-col` が必要（`overflow-y-auto` が効かない） |
+| チャットリセット後も過去の会話が表示される | `chatSessionId` を localStorage で保持すると DynamoDB の過去履歴が復元される → アプリ起動ごとに新規 UUID を生成すること |
