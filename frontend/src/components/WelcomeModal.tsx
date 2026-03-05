@@ -14,15 +14,41 @@ const C = {
   badge:       "#EDE4D4",
 } as const;
 
+const EXAMPLE_PROMPTS = [
+  "冒頭30秒をカットして、BGMを追加して",
+  "夕焼けの海の動画を生成して",
+  "ナレーションを入れてテロップも付けて",
+  "2本の動画をクロスフェードで結合して",
+  "モノクロにしてフェードアウトで締めて",
+] as const;
+
 const SLIDES = [
   {
-    title: "AI 創作スタジオへようこそ 🎬",
+    title: "やりたいことを書くだけ",
+    subtitle: "AI が最適なツールを選んで、すべて自動でこなします。",
     content: (
-      <ul className="space-y-2 text-sm text-left list-none">
-        <li>🎞️ <strong>動画編集</strong> — トリミング・結合・テロップ・音声など 15 種以上</li>
-        <li>✨ <strong>AI 動画生成</strong> — テキストから Luma AI / Nova Reel で動画を生成</li>
-        <li>🖼️ <strong>画像・音声生成</strong> — Stable Diffusion / Amazon Polly で素材を作成</li>
-      </ul>
+      <div className="flex flex-col gap-3">
+        <div
+          className="rounded-xl px-4 py-3 text-xs leading-relaxed"
+          style={{ background: "#EDE4D4", border: `1px solid ${C.border}`, color: C.textSub }}
+        >
+          動画の編集・結合・テロップ、AI 動画生成、ナレーション作成、画像生成まで——
+          <span className="font-semibold" style={{ color: C.textMain }}>指示欄にひとこと書くだけ</span>で動きます。
+        </div>
+        <p className="text-xs font-medium px-0.5" style={{ color: C.textMuted }}>たとえば...</p>
+        <div className="flex flex-col gap-1.5">
+          {EXAMPLE_PROMPTS.map((p) => (
+            <div
+              key={p}
+              className="flex items-center gap-2 rounded-lg px-3 py-2"
+              style={{ background: C.card, border: `1px solid ${C.border}` }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: C.accent }} />
+              <span className="text-xs" style={{ color: C.textMain }}>{p}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     ),
   },
   {
@@ -100,9 +126,14 @@ export function WelcomeModal({ onClose }: Props) {
         style={{ background: C.card, border: `1px solid ${C.border}` }}
       >
         {/* タイトル */}
-        <h2 className="text-xl font-semibold text-center leading-snug" style={{ color: C.textMain }}>
-          {current.title}
-        </h2>
+        <div className="text-center">
+          <h2 className="text-xl font-bold leading-snug tracking-tight" style={{ color: C.textMain }}>
+            {current.title}
+          </h2>
+          {"subtitle" in current && current.subtitle && (
+            <p className="text-sm mt-1" style={{ color: C.textSub }}>{current.subtitle}</p>
+          )}
+        </div>
 
         {/* コンテンツ */}
         <div style={{ color: C.textSub }}>{current.content}</div>
@@ -123,17 +154,30 @@ export function WelcomeModal({ onClose }: Props) {
         </div>
 
         {/* ボタン */}
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={dismiss}
-            className="text-xs px-4 py-2 rounded-lg transition-colors"
-            style={{ color: C.textMuted, border: `1px solid ${C.border}` }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
-          >
-            スキップ
-          </button>
+        <div className="flex items-center gap-2">
+          {slide > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSlide(slide - 1)}
+              className="text-xs px-4 py-2 rounded-lg transition-colors"
+              style={{ color: C.textMuted, border: `1px solid ${C.border}` }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
+            >
+              ← 戻る
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={dismiss}
+              className="text-xs px-4 py-2 rounded-lg transition-colors"
+              style={{ color: C.textMuted, border: `1px solid ${C.border}` }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
+            >
+              スキップ
+            </button>
+          )}
           <button
             type="button"
             onClick={next}
