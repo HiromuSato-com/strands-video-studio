@@ -144,6 +144,25 @@ result = agent("自然言語指示")
 
 output_key が None のまま = FAILED として DynamoDB に書く（バグ修正済み）。
 
+## 開発フロー
+
+詳細は `CONTRIBUTING.md` を参照。概要：
+
+1. **議論・方針決定** — 何を変えるか合意してから実装する
+2. **既存コードを読む** — Read で対象ファイルを確認してから Edit する
+3. **実装** — 最小限の変更。過剰な抽象化・将来への備えは入れない
+4. **ローカルビルド** — `cd frontend && npm run build --no-proxy` でエラー確認
+5. **本番デプロイ** — `./scripts/deploy-frontend.sh` でビルド〜S3〜CloudFront invalidation〜git push を一括実行
+6. **git 操作** — `git push origin main` → `git push public main`
+
+### フロントエンドデプロイ（ワンコマンド）
+
+```bash
+./scripts/deploy-frontend.sh
+# AWS_PROFILE=<profile> ./scripts/deploy-frontend.sh  # プロファイル指定
+# PUSH_PUBLIC=false ./scripts/deploy-frontend.sh       # public push をスキップ
+```
+
 ## デプロイ手順
 
 ### 1. Bedrock モデル有効化（初回のみ）
