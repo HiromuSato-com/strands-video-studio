@@ -5,8 +5,8 @@ import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
 import { TaskStatus } from "./components/TaskStatus";
 import { CompletionModal } from "./components/CompletionModal";
-import { ChatPreviewModal } from "./components/ChatPreviewModal";
 import { ChatModal } from "./components/ChatModal";
+import { ChatPreviewModal } from "./components/ChatPreviewModal";
 import { Stepper } from "./components/Stepper";
 import { WelcomeModal, shouldShowWelcome } from "./components/WelcomeModal";
 import { useTaskPoller } from "./hooks/useTaskPoller";
@@ -165,7 +165,8 @@ export default function App() {
     setChatLoading(true);
     try {
       const res = await confirmChat(chatSessionId);
-      setPreviewInstruction(res.instruction); // プレビューモーダルを表示
+      setShowChatModal(false);
+      setPreviewInstruction(res.instruction);
     } catch (e) {
       console.error(e);
     } finally {
@@ -176,7 +177,6 @@ export default function App() {
   const handlePreviewConfirm = () => {
     if (previewInstruction) {
       setInstruction(previewInstruction);
-      setShowChatModal(false);
       playSound(Snd.SOUNDS.CELEBRATION);
     }
     setPreviewInstruction(null);
@@ -229,6 +229,7 @@ export default function App() {
       {showWelcome && (
         <WelcomeModal onClose={() => setShowWelcome(false)} />
       )}
+
 
       {/* 指示プレビューモーダル */}
       {previewInstruction !== null && (

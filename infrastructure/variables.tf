@@ -4,12 +4,6 @@ variable "aws_region" {
   default     = "ap-northeast-1"
 }
 
-variable "aws_profile" {
-  description = "AWS CLI profile name"
-  type        = string
-  default     = "default"
-}
-
 variable "project_name" {
   description = "Project name prefix for all resources"
   type        = string

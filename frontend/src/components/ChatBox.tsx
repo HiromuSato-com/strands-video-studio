@@ -152,22 +152,33 @@ function AIMessageContent({ content }: { content: string }) {
 // ── Typing dots ───────────────────────────────────────────────────────────
 function TypingDots() {
   return (
-    <div className="flex justify-start">
+    <div className="flex justify-start items-end gap-2">
+      {/* Avatar dot matching AI message style */}
+      <span
+        className="w-5 h-5 rounded-full flex-shrink-0 mb-0.5"
+        style={{ background: C.aiBg, border: `1px solid ${C.border}` }}
+      />
       <div
-        className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+        className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm px-4 py-3"
         style={{ background: C.aiBg, border: `1px solid ${C.border}` }}
       >
-        <span className="text-xs" style={{ color: C.textSub }}>AIが考えています</span>
-        <span className="flex gap-1 items-center">
-          {[0, 150, 300].map((delay) => (
-            <span
-              key={delay}
-              className="inline-block w-1.5 h-1.5 rounded-full animate-bounce"
-              style={{ background: C.accent, animationDelay: `${delay}ms`, animationDuration: "0.8s" }}
-            />
-          ))}
-        </span>
+        {[0, 160, 320].map((delay) => (
+          <span
+            key={delay}
+            className="inline-block w-2 h-2 rounded-full"
+            style={{
+              background: C.accent,
+              animation: `typingPulse 1.2s ease-in-out ${delay}ms infinite`,
+            }}
+          />
+        ))}
       </div>
+      <style>{`
+        @keyframes typingPulse {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+          30%            { transform: translateY(-5px); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -13,22 +13,19 @@ terraform {
 }
 
 provider "aws" {
-  region  = var.aws_region
-  profile = var.aws_profile
+  region = var.aws_region
 }
 
 # Oregon region provider for Luma AI Ray 2 (only available in us-west-2)
 provider "aws" {
-  alias   = "uswest2"
-  region  = "us-west-2"
-  profile = var.aws_profile
+  alias  = "uswest2"
+  region = "us-west-2"
 }
 
 # N. Virginia provider for Amazon Nova Reel (only available in us-east-1)
 provider "aws" {
-  alias   = "useast1"
-  region  = "us-east-1"
-  profile = var.aws_profile
+  alias  = "useast1"
+  region = "us-east-1"
 }
 
 data "aws_caller_identity" "current" {}
