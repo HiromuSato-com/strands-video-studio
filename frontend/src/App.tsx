@@ -485,6 +485,9 @@ export default function App() {
                           </p>
                         </>
                       )}
+                      <p className="text-[9px] leading-relaxed pt-1" style={{ color: C.textMuted, borderTop: `1px solid ${C.border}` }}>
+                        日本語テロップを入れたい場合は、動画編集（AI生成なし）をお使いください。
+                      </p>
                     </div>
                   )}
                 </div>
