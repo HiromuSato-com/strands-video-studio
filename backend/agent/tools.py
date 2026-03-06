@@ -28,10 +28,11 @@ s3 = boto3.client("s3")
 # Luma AI Ray 2 is only available in us-west-2 (Oregon)
 bedrock_luma = boto3.client("bedrock-runtime", region_name="us-west-2")
 s3_luma = boto3.client("s3", region_name="us-west-2")
-# Amazon Nova Reel and Stable Diffusion XL are available in us-east-1
+# Amazon Nova Reel, Stable Diffusion XL, and Claude Vision are available in us-east-1
 bedrock_nova = boto3.client("bedrock-runtime", region_name="us-east-1")
 s3_nova = boto3.client("s3", region_name="us-east-1")
 polly = boto3.client("polly", region_name="ap-northeast-1")
+transcribe = boto3.client("transcribe", region_name="ap-northeast-1")
 
 # Tracks the most recent output S3 key produced by any tool call
 _last_output_key: str | None = None
@@ -1089,3 +1090,429 @@ def generate_speech(
     finally:
         if os.path.exists(local_output):
             os.remove(local_output)
+
+
+# ─── 映像理解・分析ツール ──────────────────────────────────────────────────────
+
+
+@tool
+def analyze_video(
+    video_key: str,
+    question: str = "",
+    sample_fps: float = 0.5,
+) -> str:
+    """
+    Analyze video content by extracting frames and using Claude Vision (claude-sonnet-4-6).
+    The agent can "see" what is actually in the video: scenes, people, objects, actions, mood, etc.
+    Use this before editing when you need to understand the video content to make decisions.
+
+    Args:
+        video_key: S3 key of the video to analyze
+        question: Specific question about the video (e.g., "何秒に何が映っていますか？面白いシーンはどこですか？")
+                  If empty, returns a general scene-by-scene description with timestamps.
+        sample_fps: Frames to extract per second (default 0.5 = every 2 seconds, max 2.0)
+
+    Returns:
+        JSON with analysis results: scene descriptions, timestamps, and answers to the question
+    """
+    import subprocess
+    import base64
+    import shutil
+
+    sample_fps = max(0.1, min(2.0, sample_fps))
+    suffix = Path(video_key).suffix or ".mp4"
+    local_input = _download_from_s3(video_key, suffix)
+    frames_dir = f"/tmp/frames_{uuid.uuid4().hex}"
+    os.makedirs(frames_dir, exist_ok=True)
+
+    try:
+        # Extract frames with ffmpeg
+        subprocess.run(
+            [
+                "ffmpeg", "-i", local_input,
+                "-vf", f"fps={sample_fps},scale=640:-1",
+                "-q:v", "3",
+                f"{frames_dir}/frame_%04d.jpg",
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        frame_files = sorted(
+            [f for f in os.listdir(frames_dir) if f.endswith(".jpg")]
+        )
+
+        if not frame_files:
+            return json.dumps({"status": "failed", "error": "No frames could be extracted"})
+
+        # Cap at 12 frames to stay within token limits
+        step = max(1, len(frame_files) // 12)
+        selected_files = frame_files[::step][:12]
+
+        # Build multimodal content for Claude
+        content = []
+        for i, fname in enumerate(selected_files):
+            frame_index = int(fname.replace("frame_", "").replace(".jpg", ""))
+            timestamp = (frame_index - 1) / sample_fps
+            content.append({
+                "type": "text",
+                "text": f"【フレーム {i + 1} / 時刻: {timestamp:.1f}秒】",
+            })
+            with open(os.path.join(frames_dir, fname), "rb") as f:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64.b64encode(f.read()).decode(),
+                    },
+                })
+
+        if question:
+            analysis_prompt = (
+                f"以下の動画フレームを分析してください。\n\n質問: {question}\n\n"
+                "各フレームの時刻を参照しながら、具体的に答えてください。"
+                "編集ツールで使える秒数（例: 3.5秒〜12.0秒）を含めて回答してください。"
+            )
+        else:
+            analysis_prompt = (
+                "以下の動画フレームを分析してください。\n\n"
+                "シーンごとに時刻（秒）と内容を日本語で説明してください。\n"
+                "特に注目すべきシーン、人物の動き、感情、映像の雰囲気なども含めてください。\n"
+                "回答はJSON形式で: {\"scenes\": [{\"start_sec\": 0.0, \"description\": \"...\"}], \"summary\": \"...\"}"
+            )
+        content.append({"type": "text", "text": analysis_prompt})
+
+        response = bedrock_nova.invoke_model(
+            modelId="us.anthropic.claude-sonnet-4-6",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "messages": [{"role": "user", "content": content}],
+            }),
+            contentType="application/json",
+            accept="application/json",
+        )
+        result = json.loads(response["body"].read())
+        analysis_text = result["content"][0]["text"]
+        logger.info(f"analyze_video complete: {len(selected_files)} frames analyzed")
+        return json.dumps({
+            "status": "success",
+            "frames_analyzed": len(selected_files),
+            "analysis": analysis_text,
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"analyze_video failed: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+    finally:
+        for path in [local_input]:
+            if os.path.exists(path):
+                os.remove(path)
+        if os.path.exists(frames_dir):
+            shutil.rmtree(frames_dir)
+
+
+@tool
+def transcribe_video(
+    video_key: str,
+    language_code: str = "ja-JP",
+) -> str:
+    """
+    Transcribe speech in a video using Amazon Transcribe.
+    Returns word-level timestamps so you can add accurate subtitles or cut by speech content.
+
+    Args:
+        video_key: S3 key of the source video
+        language_code: Language of the speech — "ja-JP" (Japanese, default), "en-US" (English), etc.
+
+    Returns:
+        JSON with full transcript text and word-level timestamps:
+        {"transcript": "...", "words": [{"word": "こんにちは", "start": 0.5, "end": 1.2}, ...]}
+    """
+    import subprocess
+
+    suffix = Path(video_key).suffix or ".mp4"
+    local_input = _download_from_s3(video_key, suffix)
+    local_audio = f"/tmp/{uuid.uuid4().hex}.mp3"
+    job_name = f"video-edit-{TASK_ID}-{uuid.uuid4().hex[:8]}"
+    audio_s3_key = f"tasks/{TASK_ID}/temp/audio_{uuid.uuid4().hex}.mp3"
+    transcript_s3_key = f"tasks/{TASK_ID}/temp/transcript_{job_name}.json"
+
+    try:
+        # Extract audio with ffmpeg
+        subprocess.run(
+            ["ffmpeg", "-i", local_input, "-q:a", "0", "-map", "a", local_audio],
+            capture_output=True,
+            check=True,
+        )
+
+        # Upload audio to S3 for Transcribe
+        s3.upload_file(local_audio, S3_BUCKET, audio_s3_key)
+        logger.info(f"Uploaded audio for transcription: {audio_s3_key}")
+
+        # Start transcription job
+        transcribe.start_transcription_job(
+            TranscriptionJobName=job_name,
+            Media={"MediaFileUri": f"s3://{S3_BUCKET}/{audio_s3_key}"},
+            MediaFormat="mp3",
+            LanguageCode=language_code,
+            OutputBucketName=S3_BUCKET,
+            OutputKey=transcript_s3_key,
+        )
+        logger.info(f"Transcription job started: {job_name}")
+
+        # Poll until complete (timeout: 10 minutes)
+        for _ in range(120):
+            time.sleep(5)
+            resp = transcribe.get_transcription_job(TranscriptionJobName=job_name)
+            status = resp["TranscriptionJob"]["TranscriptionJobStatus"]
+            logger.info(f"Transcription status: {status}")
+            if status == "COMPLETED":
+                break
+            if status == "FAILED":
+                reason = resp["TranscriptionJob"].get("FailureReason", "unknown")
+                return json.dumps({"status": "failed", "error": f"Transcription failed: {reason}"})
+        else:
+            return json.dumps({"status": "failed", "error": "Transcription timed out"})
+
+        # Download and parse transcript JSON
+        local_transcript = f"/tmp/{uuid.uuid4().hex}.json"
+        s3.download_file(S3_BUCKET, transcript_s3_key, local_transcript)
+        with open(local_transcript) as f:
+            transcript_data = json.load(f)
+
+        results = transcript_data.get("results", {})
+        full_text = " ".join(t["transcript"] for t in results.get("transcripts", []))
+        words = []
+        for item in results.get("items", []):
+            if item["type"] == "pronunciation":
+                words.append({
+                    "word": item["alternatives"][0]["content"],
+                    "start": float(item.get("start_time", 0)),
+                    "end": float(item.get("end_time", 0)),
+                })
+
+        logger.info(f"Transcription complete: {len(words)} words")
+        return json.dumps({
+            "status": "success",
+            "language": language_code,
+            "transcript": full_text,
+            "words": words,
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"transcribe_video failed: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+    finally:
+        for path in [local_input, local_audio]:
+            if os.path.exists(path):
+                os.remove(path)
+        # Clean up S3 temp files
+        for key in [audio_s3_key, transcript_s3_key]:
+            try:
+                s3.delete_object(Bucket=S3_BUCKET, Key=key)
+            except Exception:
+                pass
+
+
+@tool
+def detect_scenes(
+    video_key: str,
+    threshold: float = 0.4,
+) -> str:
+    """
+    Automatically detect scene change boundaries in a video using ffmpeg.
+    Returns a list of timestamps where the scene changes, useful for smart cutting and editing.
+
+    Args:
+        video_key: S3 key of the source video
+        threshold: Scene change sensitivity 0.0–1.0 (default 0.4).
+                   Lower = more sensitive (detects subtle changes),
+                   Higher = only detects major scene changes
+
+    Returns:
+        JSON with scene list: {"scenes": [{"scene": 1, "start_sec": 0.0, "end_sec": 5.3}, ...]}
+    """
+    import subprocess
+    import re
+
+    threshold = max(0.0, min(1.0, threshold))
+    suffix = Path(video_key).suffix or ".mp4"
+    local_input = _download_from_s3(video_key, suffix)
+
+    try:
+        # Get total duration
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-show_entries", "format=duration",
+                "-of", "json", local_input,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        probe_data = json.loads(probe.stdout)
+        total_duration = float(probe_data["format"]["duration"])
+
+        # Run ffmpeg scene detection
+        result = subprocess.run(
+            [
+                "ffmpeg", "-i", local_input,
+                "-vf", f"select='gt(scene,{threshold})',showinfo",
+                "-vsync", "vfr",
+                "-f", "null", "-",
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+        )
+
+        # Parse scene change timestamps from stderr
+        scene_starts = [0.0]
+        for line in result.stderr.split("\n"):
+            m = re.search(r"pts_time:([0-9.]+)", line)
+            if m:
+                ts = float(m.group(1))
+                if ts > 0.5:  # ignore very early false positives
+                    scene_starts.append(round(ts, 3))
+
+        scene_starts = sorted(set(scene_starts))
+        scenes = []
+        for i, start in enumerate(scene_starts):
+            end = scene_starts[i + 1] if i + 1 < len(scene_starts) else total_duration
+            scenes.append({
+                "scene": i + 1,
+                "start_sec": round(start, 3),
+                "end_sec": round(end, 3),
+                "duration_sec": round(end - start, 3),
+            })
+
+        logger.info(f"detect_scenes: {len(scenes)} scenes detected in {total_duration:.1f}s video")
+        return json.dumps({
+            "status": "success",
+            "total_duration_sec": round(total_duration, 3),
+            "scene_count": len(scenes),
+            "threshold_used": threshold,
+            "scenes": scenes,
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"detect_scenes failed: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+    finally:
+        if os.path.exists(local_input):
+            os.remove(local_input)
+
+
+@tool
+def generate_video_from_image(
+    image_key: str,
+    prompt: str,
+    duration: str = "5s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p",
+) -> str:
+    """
+    Generate a video that starts from a specific image using Luma AI Ray 2 (image-to-video).
+    The generated video will begin with the provided image and animate it according to the prompt.
+    Use this when you want to bring a still image or AI-generated image to life.
+
+    Args:
+        image_key: S3 key of the source image (JPG or PNG) to use as the first frame
+        prompt: Text description of how the image should animate (1–5000 characters)
+        duration: Video length — "5s" (default) or "9s"
+        aspect_ratio: Aspect ratio — "16:9" (default), "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"
+        resolution: Output resolution — "720p" (default) or "540p"
+
+    Returns:
+        S3 key of the generated output video
+    """
+    if not LUMA_S3_BUCKET:
+        return json.dumps({"status": "failed", "error": "LUMA_S3_BUCKET env var not set"})
+
+    if duration not in ("5s", "9s"):
+        try:
+            sec = float(duration.rstrip("s"))
+        except ValueError:
+            sec = 0
+        duration = "9s" if sec >= 7 else "5s"
+
+    if resolution not in ("720p", "540p"):
+        resolution = "720p"
+
+    valid_ratios = {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"}
+    if aspect_ratio not in valid_ratios:
+        aspect_ratio = "16:9"
+
+    # Generate a presigned URL so Luma AI can fetch the image
+    presigned_url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": image_key},
+        ExpiresIn=3600,
+    )
+
+    luma_output_prefix = f"s3://{LUMA_S3_BUCKET}/tasks/{TASK_ID}/output/"
+    logger.info(
+        f"Starting Luma AI image-to-video: image={image_key} prompt='{prompt[:60]}...' "
+        f"duration={duration} aspect_ratio={aspect_ratio} resolution={resolution}"
+    )
+
+    try:
+        response = bedrock_luma.start_async_invoke(
+            modelId="luma.ray-v2:0",
+            modelInput={
+                "prompt": prompt,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "keyframes": {
+                    "frame0": {
+                        "type": "image",
+                        "url": presigned_url,
+                    }
+                },
+            },
+            outputDataConfig={
+                "s3OutputDataConfig": {"s3Uri": luma_output_prefix}
+            },
+        )
+    except Exception as e:
+        logger.error(f"generate_video_from_image start_async_invoke failed: {e}")
+        return json.dumps({"status": "failed", "error": str(e)})
+
+    invocation_arn = response["invocationArn"]
+    logger.info(f"Bedrock async invoke started: {invocation_arn}")
+
+    # Poll until completed (timeout: 15 minutes)
+    timeout_sec = 900
+    poll_interval = 15
+    elapsed = 0
+    while elapsed < timeout_sec:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        status_resp = bedrock_luma.get_async_invoke(invocationArn=invocation_arn)
+        status = status_resp["status"]
+        logger.info(f"Bedrock job status: {status} (elapsed {elapsed}s)")
+        if status == "Completed":
+            break
+        if status == "Failed":
+            failure = status_resp.get("failureMessage", "unknown error")
+            return json.dumps({"status": "failed", "error": failure})
+    else:
+        return json.dumps({"status": "failed", "error": "Timeout waiting for image-to-video generation"})
+
+    invocation_id = invocation_arn.split("/")[-1]
+    luma_key = f"tasks/{TASK_ID}/output/{invocation_id}/output.mp4"
+
+    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
+    try:
+        logger.info(f"Downloading from Oregon bucket: s3://{LUMA_S3_BUCKET}/{luma_key}")
+        s3_luma.download_file(LUMA_S3_BUCKET, luma_key, local_output)
+        output_key = _upload_to_s3(local_output, "image_to_video.mp4")
+    finally:
+        if os.path.exists(local_output):
+            os.remove(local_output)
+
+    logger.info(f"Image-to-video complete. Copied to Tokyo: {output_key}")
+    return json.dumps({"output_key": output_key, "status": "success"})
