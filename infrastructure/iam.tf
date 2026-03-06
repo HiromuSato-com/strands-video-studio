@@ -113,6 +113,15 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Action   = ["polly:SynthesizeSpeech"]
         Resource = "*"
       },
+      {
+        Sid    = "TranscribeAccess"
+        Effect = "Allow"
+        Action = [
+          "transcribe:StartTranscriptionJob",
+          "transcribe:GetTranscriptionJob",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }
