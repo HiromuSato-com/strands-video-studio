@@ -6,9 +6,9 @@ interface Props {
 }
 
 const C = {
-  accent:    "#9B6B3A",
-  accentHov: "#7D5530",
-  card:      "#F3EDE1",
+  accent:    "#7A4E22",
+  accentHov: "#6B4318",
+  card:      "#E2D4B8",
 } as const;
 
 export function DownloadButton({ downloadUrl, outputKey }: Props) {

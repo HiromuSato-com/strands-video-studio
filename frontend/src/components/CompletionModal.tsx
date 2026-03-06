@@ -11,16 +11,16 @@ interface Props {
 }
 
 const C = {
-  bg:        "#121008",
-  accent:    "#9B6B3A",
-  accentHov: "#7D5530",
-  accentHi:  "#D4A96A",
-  card:      "#F3EDE1",
-  border:    "#D4C9B5",
-  textMain:  "#1C1810",
-  textSub:   "#8A7D6A",
-  textMuted: "#B8AC9C",
-  badge:     "#EDE4D4",
+  bg:        "#0E0C07",
+  accent:    "#7A4E22",
+  accentHov: "#6B4318",
+  accentHi:  "#C49035",
+  card:      "#E2D4B8",
+  border:    "#9C8660",
+  textMain:  "#1A1308",
+  textSub:   "#3D2C18",
+  textMuted: "#6B5438",
+  badge:     "#C4A86E",
 } as const;
 
 export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Props) {
@@ -63,8 +63,8 @@ export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Pr
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: "rgba(155,107,58,0.18)",
-                  border: "1px solid rgba(155,107,58,0.38)",
+                  background: "rgba(122,78,34,0.22)",
+                  border: "1px solid rgba(122,78,34,0.45)",
                 }}
               >
                 <Zap size={16} style={{ color: C.accentHi }} />

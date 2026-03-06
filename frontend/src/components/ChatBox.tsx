@@ -3,17 +3,17 @@ import { MessageSquare, Send, CheckCheck, RotateCcw } from "lucide-react";
 import type { ChatMessage } from "../types";
 
 const C = {
-  card:        "#F3EDE1",
-  border:      "#D4C9B5",
-  accent:      "#9B6B3A",
-  accentHover: "#7D5530",
-  textMain:    "#1C1810",
-  textSub:     "#8A7D6A",
-  textMuted:   "#B8AC9C",
-  userBg:      "#9B6B3A",
-  aiBg:        "#EDE4D4",
+  card:        "#E2D4B8",
+  border:      "#9C8660",
+  accent:      "#7A4E22",
+  accentHover: "#6B4318",
+  textMain:    "#1A1308",
+  textSub:     "#3D2C18",
+  textMuted:   "#6B5438",
+  userBg:      "#7A4E22",
+  aiBg:        "#D4C4A0",
   codeBg:      "#2A2318",
-  codeFg:      "#E8DFD0",
+  codeFg:      "#E2D4B8",
   codeLabelBg: "#3A3020",
 } as const;
 
@@ -36,7 +36,7 @@ function renderInline(text: string): React.ReactNode {
         <code
           key={i}
           className="px-1 py-0.5 rounded text-[0.7rem] font-mono"
-          style={{ background: "#D8CFBF", color: "#5C3D1A" }}
+          style={{ background: "#C0AC84", color: "#3A2010" }}
         >
           {part.slice(1, -1)}
         </code>
@@ -244,7 +244,7 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
       <div
         className="flex-1 overflow-y-auto rounded-lg p-3 space-y-3 min-h-0 transition-all duration-300"
         style={{
-          background: "#FAFAF7",
+          background: "#EDE3CC",
           border: `1px solid ${isLoading ? C.accent : C.border}`,
           boxShadow: isLoading ? `0 0 0 2px ${C.accent}22` : undefined,
         }}

@@ -32,17 +32,17 @@ interface UploadProgress {
 
 // 色の定数 — 素材感のある温かいパレット
 const C = {
-  bg:          "#121008",  // 深い琥珀の暗闇
-  card:        "#F3EDE1",  // リネン
-  border:      "#D4C9B5",  // 砂
-  accent:      "#8B5E34",  // コニャック（濃くしてコントラスト改善）
-  accentHover: "#7D5530",
-  accentDisabled: "#C4B8A8",  // disabled 状態用グレー
-  textMain:    "#1C1810",  // 温かい黒
-  textSub:     "#8A7D6A",  // 温かい中間
-  textMuted:   "#B8AC9C",  // 温かい薄
-  badge:       "#EDE4D4",  // 薄い砂
-  badgeText:   "#6B5440",
+  bg:          "#0E0C07",
+  card:        "#E2D4B8",
+  border:      "#9C8660",
+  accent:      "#7A4E22",
+  accentHover: "#6B4318",
+  accentDisabled: "#B0A080",
+  textMain:    "#1A1308",
+  textSub:     "#3D2C18",
+  textMuted:   "#6B5438",
+  badge:       "#C4A86E",
+  badgeText:   "#3A2510",
 } as const;
 
 const STEP_LABELS = [
@@ -281,7 +281,7 @@ export default function App() {
         <h1 className="font-klee text-lg font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
           AI 創作スタジオ
         </h1>
-        <p className="text-[10px] hidden sm:flex items-center gap-1.5" style={{ color: "#4A3F30" }}>
+        <p className="text-[10px] hidden sm:flex items-center gap-1.5" style={{ color: "#8B7A5E" }}>
           <Palette size={10} />
           Strands Agents · Claude Sonnet · Bedrock · ECS Fargate
         </p>
@@ -336,16 +336,16 @@ export default function App() {
                     className="inline-flex items-center gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium flex-shrink-0 transition-all"
                     style={{
                       color: C.accent,
-                      background: "rgba(139,94,52,0.08)",
-                      border: `1px solid rgba(139,94,52,0.3)`,
+                      background: "rgba(122,78,34,0.10)",
+                      border: `1px solid rgba(122,78,34,0.40)`,
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.background = "rgba(139,94,52,0.16)";
+                      e.currentTarget.style.background = "rgba(122,78,34,0.18)";
                       e.currentTarget.style.borderColor = C.accent;
                     }}
                     onMouseLeave={e => {
-                      e.currentTarget.style.background = "rgba(139,94,52,0.08)";
-                      e.currentTarget.style.borderColor = "rgba(139,94,52,0.3)";
+                      e.currentTarget.style.background = "rgba(122,78,34,0.10)";
+                      e.currentTarget.style.borderColor = "rgba(122,78,34,0.40)";
                     }}
                   >
                     スキップ（テキストから生成）
@@ -357,7 +357,7 @@ export default function App() {
               {/* 中カラム — 指示入力 */}
               <div
                 ref={instructionRef}
-                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#D4C9B5] md:border-t-0 md:border-l md:border-r md:border-[#D4C9B5] pt-4 md:pt-0 transition-opacity duration-300"
+                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#9C8660] md:border-t-0 md:border-l md:border-r md:border-[#9C8660] pt-4 md:pt-0 transition-opacity duration-300"
                 style={{
                   opacity: setupPhase === "file" ? 0.35 : 1,
                   pointerEvents: setupPhase === "file" ? "none" : "auto",
@@ -409,7 +409,7 @@ export default function App() {
 
               {/* 右カラム — モデル選択 + 送信 */}
               <div
-                className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#D4C9B5] md:border-t-0 pt-4 md:pt-0 transition-opacity duration-300"
+                className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#9C8660] md:border-t-0 pt-4 md:pt-0 transition-opacity duration-300"
                 style={{
                   opacity: setupPhase === "file" ? 0.35 : 1,
                   pointerEvents: setupPhase === "file" ? "none" : "auto",
@@ -485,7 +485,7 @@ export default function App() {
                           </p>
                         </>
                       )}
-                      <p className="text-[9px] leading-relaxed pt-1" style={{ color: C.textMuted, borderTop: `1px solid ${C.border}` }}>
+                      <p className="text-[10px] leading-relaxed pt-1" style={{ color: C.textSub, borderTop: `1px solid ${C.border}` }}>
                         日本語テロップを入れたい場合は、動画編集（AI生成なし）をお使いください。
                       </p>
                     </div>
@@ -532,7 +532,7 @@ export default function App() {
               <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.border}` }}>
                 {/* Cartridge stripe */}
                 <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #D4A96A 55%, ${C.accent} 100%)` }} />
-                <div className="p-4" style={{ background: "#EDE4D4" }}>
+                <div className="p-4" style={{ background: "#D4C4A0" }}>
                 <p className="text-[10px] font-mono tracking-[0.15em] uppercase mb-2" style={{ color: C.textMuted }}>
                   送信した創作内容
                 </p>

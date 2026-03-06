@@ -3,9 +3,9 @@ import { ChatBox } from "./ChatBox";
 import type { ChatMessage } from "../types";
 
 const C = {
-  card:   "#F3EDE1",
-  border: "#D4C9B5",
-  accent: "#9B6B3A",
+  card:   "#E2D4B8",
+  border: "#9C8660",
+  accent: "#7A4E22",
 } as const;
 
 interface Props {
@@ -33,23 +33,23 @@ export function ChatModal({ messages, onSend, onConfirm, onReset, isLoading, onC
         }}
       >
         {/* Header stripe */}
-        <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #D4A96A 55%, ${C.accent} 100%)`, flexShrink: 0 }} />
+        <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #C49035 55%, ${C.accent} 100%)`, flexShrink: 0 }} />
 
         {/* Title bar */}
         <div
           className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
           style={{ borderBottom: `1px solid ${C.border}` }}
         >
-          <span className="text-sm font-medium" style={{ color: "#1C1810" }}>
+          <span className="text-sm font-medium" style={{ color: "#1A1308" }}>
             AIとチャットで指示を作成
           </span>
           <button
             type="button"
             onClick={onClose}
             className="p-1 rounded transition-colors"
-            style={{ color: "#B8AC9C" }}
+            style={{ color: "#6B5438" }}
             onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
-            onMouseLeave={e => (e.currentTarget.style.color = "#B8AC9C")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#6B5438")}
           >
             <X size={15} />
           </button>

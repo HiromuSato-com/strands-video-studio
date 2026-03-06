@@ -13,11 +13,11 @@ const STEPS = [
 ] as const;
 
 const C = {
-  accent:    "#8B5E34",
-  textSub:   "#8A7D6A",
-  textMuted: "#B8AC9C",
-  border:    "#D4C9B5",
-  card:      "#F3EDE1",
+  accent:    "#7A4E22",
+  textSub:   "#3D2C18",
+  textMuted: "#6B5438",
+  border:    "#9C8660",
+  card:      "#E2D4B8",
 } as const;
 
 export function Stepper({ hasFiles, hasInstruction, hasModel, isSubmitted }: StepperProps) {
