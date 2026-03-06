@@ -122,7 +122,7 @@ export function WelcomeModal({ onClose }: Props) {
       style={{ background: "rgba(6,4,2,0.75)", backdropFilter: "blur(4px)" }}
     >
       <div
-        className="relative rounded-2xl shadow-2xl w-[420px] max-w-[92vw] p-8 flex flex-col gap-5"
+        className="relative rounded-2xl shadow-2xl w-[420px] max-w-[92vw] p-5 sm:p-8 flex flex-col gap-5"
         style={{ background: C.card, border: `1px solid ${C.border}` }}
       >
         {/* タイトル */}

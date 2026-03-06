@@ -223,7 +223,7 @@ export default function App() {
   const isSubmitDisabled = !instruction.trim();
 
   return (
-    <div className="h-screen flex flex-col overflow-y-hidden luxury-bg">
+    <div className="min-h-screen md:h-screen flex flex-col md:overflow-y-hidden luxury-bg">
 
       {/* ウェルカムモーダル（初回のみ） */}
       {showWelcome && (
@@ -270,7 +270,7 @@ export default function App() {
         <h1 className="font-klee text-lg font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
           AI 創作スタジオ
         </h1>
-        <p className="text-[10px] flex items-center gap-1.5" style={{ color: "#4A3F30" }}>
+        <p className="text-[10px] hidden sm:flex items-center gap-1.5" style={{ color: "#4A3F30" }}>
           <Palette size={10} />
           Strands Agents · Claude Sonnet · Bedrock · ECS Fargate
         </p>
@@ -289,10 +289,10 @@ export default function App() {
       )}
 
       {/* Main container */}
-      <div className="max-w-7xl w-full mx-auto flex-1 overflow-hidden px-4 pb-3 pt-1">
+      <div className="max-w-7xl w-full mx-auto md:flex-1 md:overflow-hidden px-4 pb-3 pt-1">
         {/* Card — リネン */}
         <div
-          className="p-3 h-full flex flex-col rounded-xl shadow-2xl"
+          className="p-3 md:h-full flex flex-col rounded-xl shadow-2xl"
           style={{
             background: C.card,
             border: `1px solid ${C.border}`,
@@ -301,10 +301,10 @@ export default function App() {
         >
 
           {step === "idle" ? (
-            <div className="flex-1 overflow-hidden grid grid-cols-[1.4fr_2fr_1.3fr] gap-3 min-h-0">
+            <div className="flex flex-col gap-4 md:grid md:grid-cols-[1.4fr_2fr_1.3fr] md:gap-3 md:flex-1 md:overflow-hidden md:min-h-0">
 
               {/* 左カラム — ファイル選択 */}
-              <div className="flex flex-col gap-3 min-h-0 min-w-0">
+              <div className="flex flex-col gap-3 md:min-h-0 min-w-0">
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <StepBadge index={0} />
                   <span
@@ -314,7 +314,7 @@ export default function App() {
                     任意
                   </span>
                 </div>
-                <UploadZone onFilesSelected={setFiles} disabled={false} className="flex-1 min-h-0" />
+                <UploadZone onFilesSelected={setFiles} disabled={false} className="md:flex-1 md:min-h-0" />
                 {files.length === 0 && (
                   <button
                     type="button"
@@ -334,8 +334,7 @@ export default function App() {
               {/* 中カラム — 指示入力 */}
               <div
                 ref={instructionRef}
-                className="flex flex-col gap-3 min-h-0 min-w-0 px-4"
-                style={{ borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}
+                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#D4C9B5] md:border-t-0 md:border-l md:border-r md:border-[#D4C9B5] pt-4 md:pt-0"
               >
                 {/* モード切替セグメント */}
                 <div
@@ -380,7 +379,7 @@ export default function App() {
               </div>
 
               {/* 右カラム — モデル選択 + 送信 */}
-              <div className="flex flex-col gap-3 min-h-0 min-w-0">
+              <div className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#D4C9B5] md:border-t-0 pt-4 md:pt-0">
                 <div className="flex flex-col gap-1.5 flex-shrink-0">
                   <label className="text-xs flex items-center gap-1.5" style={{ color: C.textSub }}>
                     <Clapperboard size={12} />
@@ -464,7 +463,7 @@ export default function App() {
                   onClick={handleSubmit}
                   disabled={isSubmitDisabled}
                   title={isSubmitDisabled ? "創作指示を入力してください" : undefined}
-                  className="mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 text-sm flex-shrink-0"
+                  className="mt-4 md:mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 text-sm flex-shrink-0"
                   style={{
                     background: isSubmitDisabled ? C.accentDisabled : C.accent,
                     color: C.card,

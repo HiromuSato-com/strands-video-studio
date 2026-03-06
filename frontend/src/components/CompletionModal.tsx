@@ -114,7 +114,7 @@ export function CompletionModal({ downloadUrl, outputKey, onClose, onReset }: Pr
           <VideoPreview src={downloadUrl} />
 
           {/* Action buttons */}
-          <div className="flex gap-3 pt-1">
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
             <a
               href={downloadUrl}
               download={filename}

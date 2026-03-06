@@ -20,7 +20,7 @@ interface Props {
 export function ChatModal({ messages, onSend, onConfirm, onReset, isLoading, onClose }: Props) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6"
       style={{ background: "rgba(6,4,2,0.82)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
