@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare, Edit3 } from "lucide-react";
+import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare, Edit3, ArrowRight } from "lucide-react";
 import { UploadZone } from "./components/UploadZone";
 import { InstructionBox } from "./components/InstructionBox";
 import { TaskStatus } from "./components/TaskStatus";
@@ -23,6 +23,7 @@ import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
 type VideoModel = "luma" | "nova_reel" | "none";
+type SetupPhase = "file" | "main";
 
 interface UploadProgress {
   filename: string;
@@ -52,6 +53,7 @@ const STEP_LABELS = [
 ] as const;
 
 export default function App() {
+  const [setupPhase, setSetupPhase] = useState<SetupPhase>("file");
   const [files, setFiles] = useState<File[]>([]);
   const [instruction, setInstruction] = useState("");
   const [videoModel, setVideoModel] = useState<VideoModel>("none");
@@ -188,8 +190,17 @@ export default function App() {
     playSound(Snd.SOUNDS.TAP);
   };
 
+  const handleFilesSelected = (selectedFiles: File[]) => {
+    setFiles(selectedFiles);
+    if (selectedFiles.length > 0) {
+      setSetupPhase("main");
+      setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
+    }
+  };
+
   const handleReset = () => {
     playSound(Snd.SOUNDS.TAP);
+    setSetupPhase("file");
     setFiles([]);
     setInstruction("");
     setVideoModel("none");
@@ -314,19 +325,31 @@ export default function App() {
                     任意
                   </span>
                 </div>
-                <UploadZone onFilesSelected={setFiles} disabled={false} className="md:flex-1 md:min-h-0" />
+                <UploadZone onFilesSelected={handleFilesSelected} disabled={false} className="md:flex-1 md:min-h-0" />
                 {files.length === 0 && (
                   <button
                     type="button"
                     onClick={() => {
-                      instructionRef.current?.querySelector("textarea")?.focus();
+                      setSetupPhase("main");
+                      setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
                     }}
-                    className="text-xs underline self-start transition-colors flex-shrink-0"
-                    style={{ color: C.textMuted }}
-                    onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
-                    onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                    className="inline-flex items-center gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium flex-shrink-0 transition-all"
+                    style={{
+                      color: C.accent,
+                      background: "rgba(139,94,52,0.08)",
+                      border: `1px solid rgba(139,94,52,0.3)`,
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "rgba(139,94,52,0.16)";
+                      e.currentTarget.style.borderColor = C.accent;
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "rgba(139,94,52,0.08)";
+                      e.currentTarget.style.borderColor = "rgba(139,94,52,0.3)";
+                    }}
                   >
                     スキップ（テキストから生成）
+                    <ArrowRight size={14} />
                   </button>
                 )}
               </div>
@@ -334,7 +357,12 @@ export default function App() {
               {/* 中カラム — 指示入力 */}
               <div
                 ref={instructionRef}
-                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#D4C9B5] md:border-t-0 md:border-l md:border-r md:border-[#D4C9B5] pt-4 md:pt-0"
+                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#D4C9B5] md:border-t-0 md:border-l md:border-r md:border-[#D4C9B5] pt-4 md:pt-0 transition-opacity duration-300"
+                style={{
+                  opacity: setupPhase === "file" ? 0.35 : 1,
+                  pointerEvents: setupPhase === "file" ? "none" : "auto",
+                  userSelect: setupPhase === "file" ? "none" : "auto",
+                }}
               >
                 {/* モード切替セグメント */}
                 <div
@@ -380,7 +408,14 @@ export default function App() {
               </div>
 
               {/* 右カラム — モデル選択 + 送信 */}
-              <div className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#D4C9B5] md:border-t-0 pt-4 md:pt-0">
+              <div
+                className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#D4C9B5] md:border-t-0 pt-4 md:pt-0 transition-opacity duration-300"
+                style={{
+                  opacity: setupPhase === "file" ? 0.35 : 1,
+                  pointerEvents: setupPhase === "file" ? "none" : "auto",
+                  userSelect: setupPhase === "file" ? "none" : "auto",
+                }}
+              >
                 <div className="flex flex-col gap-1.5 flex-shrink-0">
                   <label className="text-xs flex items-center gap-1.5" style={{ color: C.textSub }}>
                     <Clapperboard size={12} />
