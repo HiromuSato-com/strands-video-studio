@@ -3,15 +3,15 @@ import { useState } from "react";
 const STORAGE_KEY = "welcome_shown_v1";
 
 const C = {
-  bg:          "#121008",
-  card:        "#F3EDE1",
-  border:      "#D4C9B5",
-  accent:      "#8B5E34",
-  accentHover: "#7D5530",
-  textMain:    "#1C1810",
-  textSub:     "#8A7D6A",
-  textMuted:   "#B8AC9C",
-  badge:       "#EDE4D4",
+  bg:          "#0E0C07",
+  card:        "#E2D4B8",
+  border:      "#9C8660",
+  accent:      "#7A4E22",
+  accentHover: "#6B4318",
+  textMain:    "#1A1308",
+  textSub:     "#3D2C18",
+  textMuted:   "#6B5438",
+  badge:       "#C4A86E",
 } as const;
 
 const EXAMPLE_PROMPTS = [
@@ -30,7 +30,7 @@ const SLIDES = [
       <div className="flex flex-col gap-3">
         <div
           className="rounded-xl px-4 py-3 text-xs leading-relaxed"
-          style={{ background: "#EDE4D4", border: `1px solid ${C.border}`, color: C.textSub }}
+          style={{ background: "#D4C4A0", border: `1px solid ${C.border}`, color: C.textSub }}
         >
           動画の編集・結合・テロップ、AI 動画生成、ナレーション作成、画像生成まで——
           <span className="font-semibold" style={{ color: C.textMain }}>指示欄にひとこと書くだけ</span>で動きます。

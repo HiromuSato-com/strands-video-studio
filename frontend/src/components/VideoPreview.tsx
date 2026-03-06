@@ -5,12 +5,12 @@ interface Props {
 }
 
 const C = {
-  bg:       "#121008",
-  accent:   "#9B6B3A",
-  accentHi: "#D4A96A",
-  border:   "#D4C9B5",
-  textMuted:"#B8AC9C",
-  textSub:  "#8A7D6A",
+  bg:       "#0E0C07",
+  accent:   "#7A4E22",
+  accentHi: "#C49035",
+  border:   "#9C8660",
+  textMuted:"#6B5438",
+  textSub:  "#3D2C18",
 } as const;
 
 export function VideoPreview({ src }: Props) {
@@ -27,14 +27,14 @@ export function VideoPreview({ src }: Props) {
       className="rounded-xl overflow-hidden"
       style={{
         background: C.bg,
-        border: `1px solid rgba(155,107,58,0.35)`,
-        boxShadow: `0 0 24px rgba(155,107,58,0.12), inset 0 1px 0 rgba(212,169,106,0.15)`,
+        border: `1px solid rgba(122,78,34,0.35)`,
+        boxShadow: `0 0 24px rgba(122,78,34,0.12), inset 0 1px 0 rgba(196,144,53,0.15)`,
       }}
     >
       {/* Monitor header bar */}
       <div
         className="flex items-center justify-between px-5 py-3"
-        style={{ borderBottom: `1px solid rgba(155,107,58,0.2)` }}
+        style={{ borderBottom: `1px solid rgba(122,78,34,0.2)` }}
       >
         <div className="flex items-center gap-2">
           {/* LED indicator */}
@@ -58,7 +58,7 @@ export function VideoPreview({ src }: Props) {
               style={{
                 width: "18px",
                 height: "4px",
-                background: i === 1 ? C.accent : `rgba(155,107,58,${0.2 * i})`,
+                background: i === 1 ? C.accent : `rgba(122,78,34,${0.2 * i})`,
               }}
             />
           ))}
@@ -80,7 +80,7 @@ export function VideoPreview({ src }: Props) {
       {/* Bottom status bar */}
       <div
         className="flex items-center justify-between px-5 py-2"
-        style={{ borderTop: `1px solid rgba(155,107,58,0.15)` }}
+        style={{ borderTop: `1px solid rgba(122,78,34,0.15)` }}
       >
         <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: `${C.textMuted}88` }}>
           AI CREATIVE STUDIO

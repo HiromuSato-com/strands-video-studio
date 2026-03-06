@@ -1,16 +1,16 @@
 import { CheckCheck, X } from "lucide-react";
 
 const C = {
-  card:        "#F3EDE1",
-  border:      "#D4C9B5",
-  accent:      "#9B6B3A",
-  accentHover: "#7D5530",
-  textMain:    "#1C1810",
-  textSub:     "#8A7D6A",
-  textMuted:   "#B8AC9C",
-  aiBg:        "#EDE4D4",
-  badge:       "#EDE4D4",
-  badgeText:   "#6B5440",
+  card:        "#E2D4B8",
+  border:      "#9C8660",
+  accent:      "#7A4E22",
+  accentHover: "#6B4318",
+  textMain:    "#1A1308",
+  textSub:     "#3D2C18",
+  textMuted:   "#6B5438",
+  aiBg:        "#D4C4A0",
+  badge:       "#C4A86E",
+  badgeText:   "#3A2510",
 } as const;
 
 interface Props {
@@ -31,7 +31,7 @@ export function ChatPreviewModal({ instruction, onConfirm, onCancel }: Props) {
         style={{ background: C.card, border: `1px solid ${C.border}` }}
       >
         {/* Header stripe */}
-        <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #D4A96A 55%, ${C.accent} 100%)` }} />
+        <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #C49035 55%, ${C.accent} 100%)` }} />
 
         <div className="p-5">
           {/* Title row */}

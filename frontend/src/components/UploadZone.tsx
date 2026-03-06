@@ -21,11 +21,11 @@ function isAccepted(f: File) {
 }
 
 const C = {
-  border:    "#D4C9B5",
-  accent:    "#9B6B3A",
-  textMain:  "#1C1810",
-  textSub:   "#8A7D6A",
-  textMuted: "#B8AC9C",
+  border:    "#9C8660",
+  accent:    "#7A4E22",
+  textMain:  "#1A1308",
+  textSub:   "#3D2C18",
+  textMuted: "#6B5438",
 } as const;
 
 export function UploadZone({ onFilesSelected, disabled, className }: Props) {
@@ -85,9 +85,9 @@ export function UploadZone({ onFilesSelected, disabled, className }: Props) {
         className="flex-shrink-0 flex flex-col justify-center text-center p-6 rounded-lg cursor-pointer transition-all"
         style={{
           border: `1.5px dashed ${isDragging ? C.accent : C.border}`,
-          background: isDragging ? "rgba(155,107,58,0.06)" : "rgba(255,255,255,0.35)",
+          background: isDragging ? "rgba(122,78,34,0.08)" : "rgba(255,255,255,0.35)",
           boxShadow: isDragging
-            ? `inset 0 2px 10px rgba(155,107,58,0.12), 0 0 16px rgba(155,107,58,0.2)`
+            ? `inset 0 2px 10px rgba(122,78,34,0.14), 0 0 16px rgba(122,78,34,0.25)`
             : `inset 0 2px 8px rgba(12,10,5,0.18)`,
         }}
       >

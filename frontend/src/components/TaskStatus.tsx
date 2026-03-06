@@ -1,12 +1,12 @@
 import type { Task, TaskStatus as TStatus } from "../types";
 
 const C = {
-  accent:   "#9B6B3A",
-  accentHi: "#D4A96A",
-  textMain: "#1C1810",
-  textSub:  "#8A7D6A",
-  textMuted:"#B8AC9C",
-  border:   "#D4C9B5",
+  accent:   "#7A4E22",
+  accentHi: "#C49035",
+  textMain: "#1A1308",
+  textSub:  "#3D2C18",
+  textMuted:"#6B5438",
+  border:   "#9C8660",
   ok:       "#2C6B3A",
   error:    "#9B2C2C",
 } as const;

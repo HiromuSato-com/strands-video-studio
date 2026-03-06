@@ -21,12 +21,12 @@ const GEN_EXAMPLES = [
 ];
 
 const C = {
-  border:    "#D4C9B5",
-  textMain:  "#1C1810",
-  textSub:   "#8A7D6A",
-  textMuted: "#B8AC9C",
-  badge:     "#EDE4D4",
-  badgeText: "#6B5440",
+  border:    "#9C8660",
+  textMain:  "#1A1308",
+  textSub:   "#3D2C18",
+  textMuted: "#6B5438",
+  badge:     "#C4A86E",
+  badgeText: "#3A2510",
 } as const;
 
 export function InstructionBox({ value, onChange, disabled, hasFiles }: Props) {
