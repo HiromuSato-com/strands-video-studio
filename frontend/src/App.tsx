@@ -223,7 +223,7 @@ export default function App() {
   const isSubmitDisabled = !instruction.trim();
 
   return (
-    <div className="min-h-screen md:h-screen flex flex-col md:overflow-y-hidden luxury-bg">
+    <div className="min-h-screen md:h-screen flex flex-col md:overflow-y-hidden overflow-x-hidden luxury-bg">
 
       {/* ウェルカムモーダル（初回のみ） */}
       {showWelcome && (
@@ -364,7 +364,8 @@ export default function App() {
                     }}
                   >
                     <MessageSquare size={11} />
-                    AIと相談しながら作成
+                    <span className="sm:hidden">AI相談</span>
+                    <span className="hidden sm:inline">AIと相談しながら作成</span>
                   </button>
                 </div>
 
