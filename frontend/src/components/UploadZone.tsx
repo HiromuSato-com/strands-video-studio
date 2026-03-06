@@ -118,7 +118,7 @@ export function UploadZone({ onFilesSelected, disabled, className }: Props) {
 
       {/* ファイル一覧 */}
       {selectedFiles.length > 0 && (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+        <div className="md:flex-1 md:min-h-0 overflow-y-auto flex flex-col gap-1">
           <p className="flex-shrink-0 text-xs font-medium px-0.5" style={{ color: C.textMuted }}>
             {selectedFiles.length} 件選択済み
           </p>

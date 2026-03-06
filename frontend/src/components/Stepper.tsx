@@ -76,7 +76,7 @@ export function Stepper({ hasFiles, hasInstruction, hasModel, isSubmitted }: Ste
             {/* コネクタ線 */}
             {i < STEPS.length - 1 && (
               <div
-                className="w-12 h-px mx-1 mb-4 flex-shrink-0 transition-all"
+                className="w-6 sm:w-12 h-px mx-1 mb-4 flex-shrink-0 transition-all"
                 style={{ background: completed[i] ? C.accent : C.border }}
               />
             )}
