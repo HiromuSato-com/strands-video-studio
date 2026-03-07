@@ -4,7 +4,6 @@
 # 使い方:
 #   ./scripts/deploy-frontend.sh
 #   AWS_PROFILE=<profile> ./scripts/deploy-frontend.sh
-#   PUSH_PUBLIC=false ./scripts/deploy-frontend.sh  # public リモートへのプッシュをスキップ
 
 set -euo pipefail
 
@@ -14,7 +13,6 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 INFRA_DIR="$ROOT_DIR/infrastructure"
 
 AWS_PROFILE="${AWS_PROFILE:-AWSAdministratorAccess-595351378921}"
-PUSH_PUBLIC="${PUSH_PUBLIC:-true}"
 
 # ── 色付きログ ────────────────────────────────────────────
 log()  { echo "$(date '+%H:%M:%S') [INFO]  $*"; }
@@ -67,18 +65,6 @@ MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation \
   --query "Invalidation.{Id:Id,Status:Status}" \
   --output table
 ok "Invalidation 発行済み（反映に数分かかります）"
-
-# ── 5. git push ───────────────────────────────────────────
-cd "$ROOT_DIR"
-log "git push origin main..."
-git push origin main
-ok "origin/main にプッシュ完了"
-
-if [ "$PUSH_PUBLIC" = "true" ] && git remote | grep -q '^public$'; then
-  log "git push public main..."
-  git push public main
-  ok "public/main にプッシュ完了"
-fi
 
 echo ""
 ok "デプロイ完了"

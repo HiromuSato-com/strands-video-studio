@@ -6,6 +6,7 @@ import type {
   DownloadUrlResponse,
   ChatMessageResponse,
   ChatConfirmResponse,
+  ChatInitResponse,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
@@ -78,6 +79,18 @@ export async function getDownloadUrl(
   const { data } = await api.get<DownloadUrlResponse>(
     `/download-url/${taskId}`
   );
+  return data;
+}
+
+export async function initChat(
+  sessionId: string,
+  fileNames: string[]
+): Promise<ChatInitResponse> {
+  const { data } = await api.post<ChatInitResponse>("/chat", {
+    session_id: sessionId,
+    action: "init",
+    file_names: fileNames,
+  });
   return data;
 }
 

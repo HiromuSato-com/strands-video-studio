@@ -17,6 +17,7 @@ import {
   getDownloadUrl,
   sendChatMessage,
   confirmChat,
+  initChat,
 } from "./api/client";
 import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
@@ -188,6 +189,30 @@ export default function App() {
     setChatSessionId(uuidv4());
     setChatMessages([]);
     playSound(Snd.SOUNDS.TAP);
+  };
+
+  const openChatModal = async () => {
+    setShowChatModal(true);
+    if (chatMessages.length > 0) return;
+
+    if (files.length === 0) {
+      // ファイルなし → 即時表示（API不要）
+      setChatMessages([{
+        role: "assistant",
+        content: "こんにちは！動画編集・生成のご要望をお聞かせください。どのような映像を作りたいですか？",
+      }]);
+    } else {
+      // ファイルあり → AIがファイルを認識して挨拶を生成
+      setChatLoading(true);
+      try {
+        const res = await initChat(chatSessionId, files.map(f => f.name));
+        setChatMessages(res.messages);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setChatLoading(false);
+      }
+    }
   };
 
   const handleFilesSelected = (selectedFiles: File[]) => {
@@ -383,7 +408,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowChatModal(true)}
+                    onClick={openChatModal}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
                     style={{
                       background: showChatModal ? C.accent : "transparent",
