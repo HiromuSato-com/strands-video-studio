@@ -21,7 +21,7 @@ MODEL_ID = "us.anthropic.claude-sonnet-4-6"
 dynamodb = boto3.resource("dynamodb")
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
 
-SYSTEM_PROMPT_MESSAGE = """あなたはAI動画編集・生成スタジオのアシスタントです。
+BASE_SYSTEM_PROMPT = """あなたはAI動画編集・生成スタジオのアシスタントです。
 ユーザーが動画編集や生成の指示内容を固めるお手伝いをしてください。
 
 【利用可能な編集機能】
@@ -68,6 +68,15 @@ SYSTEM_PROMPT_MESSAGE = """あなたはAI動画編集・生成スタジオのア
 - ユーザーが「はい」「お願いします」などと承諾しても、「処理を開始します」「生成します」「編集します」などの言葉は絶対に使わない
 - 承諾された場合は必ず「画面下の「確定して指示欄に反映」ボタンを押してください」と案内するだけにする"""
 
+
+def build_system_prompt(file_names: list) -> str:
+    prompt = BASE_SYSTEM_PROMPT
+    if file_names:
+        file_list = "\n".join(f"- {f}" for f in file_names)
+        prompt += f"\n\n【現在選択されているファイル】\n{file_list}\n\nこれらのファイルを編集・加工することを前提として会話してください。"
+    return prompt
+
+
 CONFIRM_PROMPT = """以下の会話から動画編集・生成の指示文を1〜3文で生成してください。
 - 日本語・「〜してください」形式
 - 具体的な数値（秒数・ファイル名等）を含める
@@ -89,7 +98,10 @@ def handler(event, context):
     if not session_id:
         return error_response(400, "session_id is required")
 
-    if action == "message":
+    if action == "init":
+        file_names = body.get("file_names", [])
+        return handle_init(session_id, file_names)
+    elif action == "message":
         message = body.get("message", "").strip()
         if not message:
             return error_response(400, "message is required")
@@ -100,14 +112,50 @@ def handler(event, context):
         return error_response(400, f"Unknown action: {action}")
 
 
+def handle_init(session_id: str, file_names: list):
+    session = load_session(session_id)
+    # セッション既存（再オープン）→ 既存履歴をそのまま返す
+    if session.get("messages"):
+        messages = json.loads(session["messages"])
+        return {
+            "statusCode": 200,
+            "headers": cors_headers(),
+            "body": json.dumps({"messages": messages}, ensure_ascii=False),
+        }
+
+    # 新規セッション: AIに挨拶メッセージを生成させる
+    if file_names:
+        file_list = "、".join(file_names)
+        init_prompt = f"ユーザーが以下のファイルを選択しました: {file_list}\n\nユーザーに簡潔に挨拶し、これらのファイルをどのように編集したいか聞いてください。"
+    else:
+        init_prompt = "ユーザーが動画編集・生成の指示を作るためにチャットを開始しました。簡潔に挨拶し、どのようなことをしたいか聞いてください。"
+
+    system = build_system_prompt(file_names)
+    reply = invoke_bedrock([{"role": "user", "content": init_prompt}], system_prompt=system)
+
+    # AIの挨拶のみをセッション履歴として保存
+    messages = [{"role": "assistant", "content": reply}]
+    save_session(session_id, messages, file_names)
+
+    return {
+        "statusCode": 200,
+        "headers": cors_headers(),
+        "body": json.dumps({"reply": reply, "messages": messages}, ensure_ascii=False),
+    }
+
+
 def handle_message(session_id: str, message: str):
-    messages = load_messages(session_id)
+    session = load_session(session_id)
+    messages = json.loads(session.get("messages", "[]"))
+    file_names = json.loads(session.get("file_names", "[]"))
+
     messages.append({"role": "user", "content": message})
 
-    reply = invoke_bedrock(messages, SYSTEM_PROMPT_MESSAGE)
+    system = build_system_prompt(file_names)
+    reply = invoke_bedrock(messages, system)
 
     messages.append({"role": "assistant", "content": reply})
-    save_messages(session_id, messages)
+    save_session(session_id, messages, file_names)
 
     return {
         "statusCode": 200,
@@ -117,7 +165,8 @@ def handle_message(session_id: str, message: str):
 
 
 def handle_confirm(session_id: str):
-    messages = load_messages(session_id)
+    session = load_session(session_id)
+    messages = json.loads(session.get("messages", "[]"))
     if not messages:
         return error_response(400, "No chat history found for this session")
 
@@ -152,22 +201,20 @@ def invoke_bedrock(messages: list, system_prompt: str | None) -> str:
     return response["output"]["message"]["content"][0]["text"]
 
 
-def load_messages(session_id: str) -> list:
+def load_session(session_id: str) -> dict:
     table = dynamodb.Table(CHAT_TABLE)
     result = table.get_item(Key={"session_id": session_id})
-    item = result.get("Item")
-    if not item:
-        return []
-    return json.loads(item.get("messages", "[]"))
+    return result.get("Item") or {}
 
 
-def save_messages(session_id: str, messages: list):
+def save_session(session_id: str, messages: list, file_names: list):
     now = datetime.now(timezone.utc).isoformat()
     table = dynamodb.Table(CHAT_TABLE)
     table.put_item(
         Item={
             "session_id": session_id,
             "messages": json.dumps(messages, ensure_ascii=False),
+            "file_names": json.dumps(file_names, ensure_ascii=False),
             "updated_at": now,
         }
     )

@@ -39,3 +39,8 @@ export interface ChatMessageResponse {
 export interface ChatConfirmResponse {
   instruction: string;
 }
+
+export interface ChatInitResponse {
+  reply?: string;
+  messages: ChatMessage[];
+}

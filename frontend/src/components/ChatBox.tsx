@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, CheckCheck, RotateCcw } from "lucide-react";
+import { Send, CheckCheck, RotateCcw } from "lucide-react";
 import type { ChatMessage } from "../types";
 
 const C = {
@@ -16,12 +16,6 @@ const C = {
   codeFg:      "#E2D4B8",
   codeLabelBg: "#3A3020",
 } as const;
-
-const HINTS = [
-  "夕焼けの映像を5秒生成したい",
-  "動画の最初の10秒をカットしてください",
-  "2つの動画をつなぎ合わせたい",
-];
 
 // ── Inline markdown: **bold**, *italic*, `code` ────────────────────────────
 function renderInline(text: string): React.ReactNode {
@@ -217,7 +211,6 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
   };
 
   const hasConversation = messages.length >= 2;
-  const inputBlocked = disabled || isLoading;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
@@ -249,99 +242,81 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
           boxShadow: isLoading ? `0 0 0 2px ${C.accent}22` : undefined,
         }}
       >
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-            <MessageSquare size={28} style={{ color: C.textMuted }} />
-            <p className="text-xs" style={{ color: C.textSub }}>
-              AIと対話しながら動画指示を固めましょう
-            </p>
-            <div className="flex flex-col gap-1.5 w-full max-w-xs">
-              {HINTS.map((hint) => (
-                <button
-                  key={hint}
-                  type="button"
-                  onClick={() => setInput(hint)}
-                  className="text-xs px-3 py-1.5 rounded-lg text-left transition-colors"
-                  style={{ background: C.aiBg, border: `1px solid ${C.border}`, color: C.textSub }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
-                >
-                  {hint}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "user" ? (
-                  <div
-                    className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed"
-                    style={{ background: C.userBg, color: "#FFF" }}
-                  >
-                    {msg.content}
-                  </div>
-                ) : (
-                  <div
-                    className="max-w-[92%] rounded-lg px-3 py-2.5 text-xs"
-                    style={{ background: C.aiBg, color: C.textMain, border: `1px solid ${C.border}` }}
-                  >
-                    <AIMessageContent content={msg.content} />
-                  </div>
-                )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            {msg.role === "user" ? (
+              <div
+                className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap"
+                style={{ background: C.userBg, color: "#FFF" }}
+              >
+                {msg.content}
               </div>
-            ))}
-            {isLoading && <TypingDots />}
-          </>
-        )}
+            ) : (
+              <div
+                className="max-w-[92%] rounded-lg px-3 py-2.5 text-xs"
+                style={{ background: C.aiBg, color: C.textMain, border: `1px solid ${C.border}` }}
+              >
+                <AIMessageContent content={msg.content} />
+              </div>
+            )}
+          </div>
+        ))}
+        {isLoading && <TypingDots />}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input row */}
+      {/* Input row + confirm — AI応答中は非表示（フェードアウト） */}
       <div
-        className="flex gap-2 items-end transition-all duration-200"
-        style={inputBlocked ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+        className="flex flex-col gap-2"
+        style={{
+          opacity: isLoading ? 0 : 1,
+          maxHeight: isLoading ? 0 : "200px",
+          overflow: "hidden",
+          pointerEvents: isLoading ? "none" : "auto",
+          transition: isLoading
+            ? "opacity 0.15s ease, max-height 0.2s ease"
+            : "opacity 0.25s ease 0.1s, max-height 0.25s ease 0.1s",
+        }}
       >
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={isLoading ? "AIが応答中です..." : "メッセージを入力（Enter で送信）"}
-          disabled={inputBlocked}
-          rows={2}
-          className="flex-1 resize-none rounded-lg px-3 py-2 text-xs outline-none transition-colors"
-          style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textMain }}
-          onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-          onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!input.trim() || inputBlocked}
-          className="rounded-lg p-2.5 transition-colors flex-shrink-0"
-          style={{ background: input.trim() && !inputBlocked ? C.accent : C.border, color: "#FFF" }}
-        >
-          <Send size={14} />
-        </button>
-      </div>
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="メッセージを入力（Enter で送信）"
+            disabled={disabled}
+            rows={2}
+            className="flex-1 resize-none rounded-lg px-3 py-2 text-xs outline-none transition-colors"
+            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textMain }}
+            onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+            onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!input.trim() || !!disabled}
+            className="rounded-lg p-2.5 transition-colors flex-shrink-0"
+            style={{ background: input.trim() && !disabled ? C.accent : C.border, color: "#FFF" }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
 
-      {/* Confirm button */}
-      {hasConversation && (
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={inputBlocked}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors"
-          style={{ background: C.accent, color: "#FFF", opacity: inputBlocked ? 0.6 : 1 }}
-          onMouseEnter={e => { if (!inputBlocked) e.currentTarget.style.background = C.accentHover; }}
-          onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
-        >
-          <CheckCheck size={13} />
-          この内容で確定して指示欄に反映
-        </button>
-      )}
+        {hasConversation && (
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: C.accent, color: "#FFF" }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.accentHover; }}
+            onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
+          >
+            <CheckCheck size={13} />
+            この内容で確定して指示欄に反映
+          </button>
+        )}
+      </div>
     </div>
   );
 }

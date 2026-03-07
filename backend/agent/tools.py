@@ -442,13 +442,18 @@ def add_text(
     output_filename = f"text_{Path(video_key).name}"
     local_output = f"/tmp/{uuid.uuid4().hex}{suffix}"
 
-    # Locate a CJK-capable font (installed via fonts-noto-cjk in Dockerfile)
+    # Locate a CJK-capable font (installed via fonts-noto-cjk in Dockerfile).
+    # fonts-noto-cjk installs .ttc (TrueType Collection) files, not .otf/.ttf,
+    # so .ttc must be included in the search patterns.
     font_path = None
     for pattern in [
+        "/usr/share/fonts/**/*CJK*Regular*.ttc",
+        "/usr/share/fonts/**/*Noto*CJK*.ttc",
         "/usr/share/fonts/**/*CJK*Regular*.otf",
         "/usr/share/fonts/**/*Noto*CJK*.otf",
         "/usr/share/fonts/**/*.ttf",
         "/usr/share/fonts/**/*.otf",
+        "/usr/share/fonts/**/*.ttc",
     ]:
         matches = glob_module.glob(pattern, recursive=True)
         if matches:
