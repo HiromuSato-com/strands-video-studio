@@ -211,7 +211,6 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
   };
 
   const hasConversation = messages.length >= 2;
-  const inputBlocked = disabled || isLoading;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
@@ -270,50 +269,58 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
         <div ref={bottomRef} />
       </div>
 
-      {/* Input row */}
+      {/* Input row + confirm — AI応答中は非表示（フェードアウト） */}
       <div
-        className="flex gap-2 items-end transition-all duration-200"
-        style={inputBlocked ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+        className="flex flex-col gap-2"
+        style={{
+          opacity: isLoading ? 0 : 1,
+          maxHeight: isLoading ? 0 : "200px",
+          overflow: "hidden",
+          pointerEvents: isLoading ? "none" : "auto",
+          transition: isLoading
+            ? "opacity 0.15s ease, max-height 0.2s ease"
+            : "opacity 0.25s ease 0.1s, max-height 0.25s ease 0.1s",
+        }}
       >
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={isLoading ? "AIが応答中です..." : "メッセージを入力（Enter で送信）"}
-          disabled={inputBlocked}
-          rows={2}
-          className="flex-1 resize-none rounded-lg px-3 py-2 text-xs outline-none transition-colors"
-          style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textMain }}
-          onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-          onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!input.trim() || inputBlocked}
-          className="rounded-lg p-2.5 transition-colors flex-shrink-0"
-          style={{ background: input.trim() && !inputBlocked ? C.accent : C.border, color: "#FFF" }}
-        >
-          <Send size={14} />
-        </button>
-      </div>
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="メッセージを入力（Enter で送信）"
+            disabled={disabled}
+            rows={2}
+            className="flex-1 resize-none rounded-lg px-3 py-2 text-xs outline-none transition-colors"
+            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textMain }}
+            onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+            onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!input.trim() || !!disabled}
+            className="rounded-lg p-2.5 transition-colors flex-shrink-0"
+            style={{ background: input.trim() && !disabled ? C.accent : C.border, color: "#FFF" }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
 
-      {/* Confirm button */}
-      {hasConversation && (
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={inputBlocked}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors"
-          style={{ background: C.accent, color: "#FFF", opacity: inputBlocked ? 0.6 : 1 }}
-          onMouseEnter={e => { if (!inputBlocked) e.currentTarget.style.background = C.accentHover; }}
-          onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
-        >
-          <CheckCheck size={13} />
-          この内容で確定して指示欄に反映
-        </button>
-      )}
+        {hasConversation && (
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: C.accent, color: "#FFF" }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.accentHover; }}
+            onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
+          >
+            <CheckCheck size={13} />
+            この内容で確定して指示欄に反映
+          </button>
+        )}
+      </div>
     </div>
   );
 }
