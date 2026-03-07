@@ -193,12 +193,19 @@ export default function App() {
 
   const openChatModal = async () => {
     setShowChatModal(true);
-    // 新規セッション（メッセージ未送信）のときだけ init を呼ぶ
-    if (chatMessages.length === 0) {
+    if (chatMessages.length > 0) return;
+
+    if (files.length === 0) {
+      // ファイルなし → 即時表示（API不要）
+      setChatMessages([{
+        role: "assistant",
+        content: "こんにちは！動画編集・生成のご要望をお聞かせください。どのような映像を作りたいですか？",
+      }]);
+    } else {
+      // ファイルあり → AIがファイルを認識して挨拶を生成
       setChatLoading(true);
       try {
-        const fileNames = files.map(f => f.name);
-        const res = await initChat(chatSessionId, fileNames);
+        const res = await initChat(chatSessionId, files.map(f => f.name));
         setChatMessages(res.messages);
       } catch (e) {
         console.error(e);
