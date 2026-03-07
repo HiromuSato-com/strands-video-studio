@@ -242,30 +242,26 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
           boxShadow: isLoading ? `0 0 0 2px ${C.accent}22` : undefined,
         }}
       >
-        {messages.length > 0 ? (
-          <>
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "user" ? (
-                  <div
-                    className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed"
-                    style={{ background: C.userBg, color: "#FFF" }}
-                  >
-                    {msg.content}
-                  </div>
-                ) : (
-                  <div
-                    className="max-w-[92%] rounded-lg px-3 py-2.5 text-xs"
-                    style={{ background: C.aiBg, color: C.textMain, border: `1px solid ${C.border}` }}
-                  >
-                    <AIMessageContent content={msg.content} />
-                  </div>
-                )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            {msg.role === "user" ? (
+              <div
+                className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed"
+                style={{ background: C.userBg, color: "#FFF" }}
+              >
+                {msg.content}
               </div>
-            ))}
-            {isLoading && <TypingDots />}
-          </>
-        ) : null}
+            ) : (
+              <div
+                className="max-w-[92%] rounded-lg px-3 py-2.5 text-xs"
+                style={{ background: C.aiBg, color: C.textMain, border: `1px solid ${C.border}` }}
+              >
+                <AIMessageContent content={msg.content} />
+              </div>
+            )}
+          </div>
+        ))}
+        {isLoading && <TypingDots />}
         <div ref={bottomRef} />
       </div>
 
