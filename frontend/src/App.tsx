@@ -17,6 +17,7 @@ import {
   getDownloadUrl,
   sendChatMessage,
   confirmChat,
+  initChat,
 } from "./api/client";
 import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
@@ -188,6 +189,23 @@ export default function App() {
     setChatSessionId(uuidv4());
     setChatMessages([]);
     playSound(Snd.SOUNDS.TAP);
+  };
+
+  const openChatModal = async () => {
+    setShowChatModal(true);
+    // 新規セッション（メッセージ未送信）のときだけ init を呼ぶ
+    if (chatMessages.length === 0) {
+      setChatLoading(true);
+      try {
+        const fileNames = files.map(f => f.name);
+        const res = await initChat(chatSessionId, fileNames);
+        setChatMessages(res.messages);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setChatLoading(false);
+      }
+    }
   };
 
   const handleFilesSelected = (selectedFiles: File[]) => {
@@ -383,7 +401,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowChatModal(true)}
+                    onClick={openChatModal}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
                     style={{
                       background: showChatModal ? C.accent : "transparent",
