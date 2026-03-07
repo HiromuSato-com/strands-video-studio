@@ -246,7 +246,7 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "user" ? (
               <div
-                className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed"
+                className="max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap"
                 style={{ background: C.userBg, color: "#FFF" }}
               >
                 {msg.content}
