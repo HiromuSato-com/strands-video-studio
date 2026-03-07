@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, CheckCheck, RotateCcw } from "lucide-react";
+import { Send, CheckCheck, RotateCcw } from "lucide-react";
 import type { ChatMessage } from "../types";
 
 const C = {
@@ -16,12 +16,6 @@ const C = {
   codeFg:      "#E2D4B8",
   codeLabelBg: "#3A3020",
 } as const;
-
-const HINTS = [
-  "夕焼けの映像を5秒生成したい",
-  "動画の最初の10秒をカットしてください",
-  "2つの動画をつなぎ合わせたい",
-];
 
 // ── Inline markdown: **bold**, *italic*, `code` ────────────────────────────
 function renderInline(text: string): React.ReactNode {
@@ -249,29 +243,7 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
           boxShadow: isLoading ? `0 0 0 2px ${C.accent}22` : undefined,
         }}
       >
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-            <MessageSquare size={28} style={{ color: C.textMuted }} />
-            <p className="text-xs" style={{ color: C.textSub }}>
-              AIと対話しながら動画指示を固めましょう
-            </p>
-            <div className="flex flex-col gap-1.5 w-full max-w-xs">
-              {HINTS.map((hint) => (
-                <button
-                  key={hint}
-                  type="button"
-                  onClick={() => setInput(hint)}
-                  className="text-xs px-3 py-1.5 rounded-lg text-left transition-colors"
-                  style={{ background: C.aiBg, border: `1px solid ${C.border}`, color: C.textSub }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
-                >
-                  {hint}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
+        {messages.length > 0 ? (
           <>
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -294,7 +266,7 @@ export function ChatBox({ messages, onSend, onConfirm, onReset, isLoading, disab
             ))}
             {isLoading && <TypingDots />}
           </>
-        )}
+        ) : null}
         <div ref={bottomRef} />
       </div>
 
