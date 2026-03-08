@@ -18,6 +18,7 @@ import {
   sendChatMessage,
   confirmChat,
   initChat,
+  deleteFile,
 } from "./api/client";
 import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
@@ -56,6 +57,11 @@ const STEP_LABELS = [
 export default function App() {
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("file");
   const [files, setFiles] = useState<File[]>([]);
+  // ファイル選択時の即時アップロード管理
+  // fileKey (`${name}-${size}`) → S3 key のマッピング
+  const [inputKeyMap, setInputKeyMap] = useState<Map<string, string>>(new Map());
+  // セッション全体で使う task_id（ファイル選択時のアップロードに使用）
+  const [workingTaskId, setWorkingTaskId] = useState<string>(() => uuidv4());
   const [instruction, setInstruction] = useState("");
   const [videoModel, setVideoModel] = useState<VideoModel>("none");
   const [step, setStep] = useState<AppStep>("idle");
@@ -122,24 +128,25 @@ export default function App() {
     setDownloadKey(null);
     setShowModal(false);
 
-    const newTaskId = uuidv4();
     try {
-      const initialProgress = files.map((f) => ({ filename: f.name, percent: 0 }));
-      setUploadProgress(initialProgress);
+      // ファイルは選択時に既にアップロード済み → inputKeyMap から S3 キーを取得
+      // アップロードが間に合っていないファイルは files のまま再アップロード（フォールバック）
+      const uploadedKeys = files.map(f => inputKeyMap.get(`${f.name}-${f.size}`)).filter(Boolean) as string[];
+      const notYetUploaded = files.filter(f => !inputKeyMap.has(`${f.name}-${f.size}`));
 
-      const inputKeys = await Promise.all(
-        files.map(async (file, i) => {
-          const { upload_url, key } = await getUploadUrl(newTaskId, file.name);
-          await uploadFileToS3(upload_url, file, (percent) => {
-            setUploadProgress((prev) =>
-              prev.map((p, idx) => (idx === i ? { ...p, percent } : p))
-            );
-          });
-          return key;
-        })
-      );
+      let inputKeys = [...uploadedKeys];
+      if (notYetUploaded.length > 0) {
+        const fallbackKeys = await Promise.all(
+          notYetUploaded.map(async (file) => {
+            const { upload_url, key } = await getUploadUrl(workingTaskId, file.name);
+            await uploadFileToS3(upload_url, file);
+            return key;
+          })
+        );
+        inputKeys = [...inputKeys, ...fallbackKeys];
+      }
 
-      const { task_id } = await createTask(newTaskId, instruction, inputKeys, videoModel);
+      const { task_id } = await createTask(workingTaskId, instruction, inputKeys, videoModel);
       setTaskId(task_id);
       setStep("submitted");
     } catch (e) {
@@ -203,9 +210,13 @@ export default function App() {
       }]);
     } else {
       // ファイルあり → AIがファイルを認識して挨拶を生成
+      // アップロード済みの S3 キーも渡すことで事前分析結果を活用する
       setChatLoading(true);
       try {
-        const res = await initChat(chatSessionId, files.map(f => f.name));
+        const currentInputKeys = files
+          .map(f => inputKeyMap.get(`${f.name}-${f.size}`))
+          .filter(Boolean) as string[];
+        const res = await initChat(chatSessionId, files.map(f => f.name), currentInputKeys);
         setChatMessages(res.messages);
       } catch (e) {
         console.error(e);
@@ -215,8 +226,38 @@ export default function App() {
     }
   };
 
-  const handleFilesSelected = (selectedFiles: File[]) => {
+  const handleFilesSelected = async (selectedFiles: File[]) => {
+    const prevFiles = files; // クロージャ時点の値（= 更新前の files）
+
+    // 削除されたファイルを S3 から消す
+    const newFileKeys = new Set(selectedFiles.map(f => `${f.name}-${f.size}`));
+    for (const prevFile of prevFiles) {
+      const fileKey = `${prevFile.name}-${prevFile.size}`;
+      if (!newFileKeys.has(fileKey)) {
+        const s3Key = inputKeyMap.get(fileKey);
+        if (s3Key) {
+          deleteFile(s3Key).catch(err => console.error("Delete failed:", err));
+          setInputKeyMap(prev => { const next = new Map(prev); next.delete(fileKey); return next; });
+        }
+      }
+    }
+
     setFiles(selectedFiles);
+
+    // 新しく追加されたファイルを即時アップロード
+    const prevFileKeys = new Set(prevFiles.map(f => `${f.name}-${f.size}`));
+    const newlyAdded = selectedFiles.filter(f => !prevFileKeys.has(`${f.name}-${f.size}`));
+    for (const file of newlyAdded) {
+      const fileKey = `${file.name}-${file.size}`;
+      try {
+        const { upload_url, key } = await getUploadUrl(workingTaskId, file.name);
+        await uploadFileToS3(upload_url, file);
+        setInputKeyMap(prev => new Map(prev).set(fileKey, key));
+      } catch (err) {
+        console.error("Immediate upload failed:", err);
+      }
+    }
+
     if (selectedFiles.length > 0) {
       setSetupPhase("main");
       setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
@@ -227,6 +268,8 @@ export default function App() {
     playSound(Snd.SOUNDS.TAP);
     setSetupPhase("file");
     setFiles([]);
+    setInputKeyMap(new Map());
+    setWorkingTaskId(uuidv4());
     setInstruction("");
     setVideoModel("none");
     setStep("idle");
