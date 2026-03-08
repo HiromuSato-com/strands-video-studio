@@ -174,6 +174,39 @@ def insert_image(video_key: str, image_key: str, start_sec: float, end_sec: floa
 
 
 @tool
+def image_to_clip(image_key: str, duration_sec: float, fps: int = 24) -> str:
+    """
+    Convert a still image into a video clip of the specified duration.
+    Use this to create slide-style videos: generate or upload an image, convert it
+    to a clip, add text overlay, then concatenate multiple clips with transitions.
+
+    Args:
+        image_key: S3 key of the source image (JPG or PNG)
+        duration_sec: Duration of the output video clip in seconds
+        fps: Frames per second (default 24)
+
+    Returns:
+        S3 key of the output video clip (.mp4)
+    """
+    from moviepy import ImageClip
+
+    image_suffix = Path(image_key).suffix or ".jpg"
+    local_image = _download_from_s3(image_key, image_suffix)
+    output_filename = f"clip_{Path(image_key).stem}.mp4"
+    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
+
+    try:
+        clip = ImageClip(local_image).with_duration(duration_sec).with_fps(fps)
+        clip.write_videofile(local_output, logger=None)
+        output_key = _upload_to_s3(local_output, output_filename)
+        return json.dumps({"output_key": output_key, "status": "success"})
+    finally:
+        for path in [local_image, local_output]:
+            if os.path.exists(path):
+                os.remove(path)
+
+
+@tool
 def concat_videos(input_keys: list[str]) -> str:
     """
     Concatenate multiple videos into a single output video.
