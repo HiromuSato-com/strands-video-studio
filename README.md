@@ -26,24 +26,35 @@ AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × 
 ブラウザ (React/Vite)
   │
   ├─ S3 Presigned URL → S3 (動画/画像アップロード)
+  │    └─ S3 PUT イベント → Lambda (analyzer) → Claude Vision でファイル即時分析 → DynamoDB
   │
   └─ API Gateway (HTTP API v2)
-       ├─ GET  /upload-url       → Lambda
-       ├─ POST /tasks            → Lambda → ECS Fargate RunTask
-       ├─ GET  /tasks/{id}       → Lambda → DynamoDB
-       └─ GET  /download-url/{id}→ Lambda → S3 Presigned URL
+       ├─ GET    /upload-url       → Lambda → S3 Presigned PUT URL
+       ├─ POST   /tasks            → Lambda → ECS Fargate RunTask
+       ├─ GET    /tasks/{id}       → Lambda → DynamoDB (ステータスポーリング)
+       ├─ GET    /download-url/{id}→ Lambda → S3 Presigned GET URL
+       ├─ POST   /chat             → Lambda → DynamoDB (チャット履歴管理)
+       └─ DELETE /files            → Lambda → S3 入力ファイル削除
 
 ECS Fargate (Strands Agent)
   ├─ Strands Agent + BedrockModel (Claude Sonnet 4.6, us-east-1)
-  ├─ MoviePy + ffmpeg による動画編集
-  ├─ Luma AI Ray 2 (us-west-2) による AI 動画生成
+  ├─ MoviePy + ffmpeg による動画編集（trim / concat / add_text / fade 等 20種類）
+  ├─ Claude Vision による動画フレーム分析 / Amazon Transcribe による音声テキスト化
+  ├─ Luma AI Ray 2 (us-west-2) による AI 動画生成（テキスト→動画・画像→動画）
   │    └─ Oregon S3 (luma-output) → Tokyo S3 (assets) にクロスリージョン転送
   ├─ Amazon Nova Reel (us-east-1) による AI 動画生成
   │    └─ N.Virginia S3 (nova-reel-output) → Tokyo S3 (assets) にクロスリージョン転送
+  ├─ Amazon Nova Canvas (us-east-1) による AI 画像生成
+  ├─ Amazon Polly (ap-northeast-1) による音声合成
   └─ 処理結果を S3 / DynamoDB に書き込み
 
 フロントエンド配信
   CloudFront → S3 (静的サイト)
+
+DynamoDB テーブル構成
+  ├─ {project}-tasks          — タスクステータス管理 (task_id PK)
+  ├─ {project}-file-analysis  — ファイル分析結果キャッシュ (s3_key PK, TTL 24h)
+  └─ {project}-chat-sessions  — チャット会話履歴 (session_id PK)
 
 S3 バケット構成
   ├─ video-edit-assets-{account}               (ap-northeast-1) — 入出力ファイル・最終動画
@@ -71,6 +82,10 @@ S3 バケット構成
     > 作成されたバケット名を `infrastructure/variables.tf` の `nova_reel_s3_bucket_name` に設定してください。
 
 ## デプロイ手順
+
+> **AWS を初めて使う方へ**: アカウント作成・IAM Identity Center の設定・Bedrock モデルの有効化など、ゼロから構築する詳細手順は **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** を参照してください。
+
+以下はすでに AWS 環境が整っている方向けの概要手順です。
 
 ### 1. Terraform でインフラを構築
 
@@ -150,10 +165,11 @@ aws s3 sync dist/ s3://$FRONTEND_BUCKET/ \
 1. `frontend_url` をブラウザで開く
    - 初回アクセス時はオンボーディングモーダルが表示される（「スキップ」または「はじめる」で閉じる）
 2. 動画ファイル（MP4 等）や画像ファイルをドラッグ＆ドロップでアップロード（任意・複数可）
+   - アップロード直後に Claude Vision が自動分析し、チャット提案に活用される
    - ファイルなしでも「スキップ（テキストから生成）」リンクで指示欄にジャンプできる
 3. 自然言語で創作指示を入力
-   - 直接入力、またはセグメントコントロールで「AIと相談しながら作成」モードに切替可能
-   - サンプルプロンプトをクリックしてワンタップで入力することもできる
+   - **直接入力**: サンプルプロンプトをクリックしてワンタップで入力も可能
+   - **AI チャットモード**: セグメントコントロールで「AIと相談しながら作成」に切替し、対話で指示を整理→確定すると指示欄に反映
 4. 右カラムの AI 動画生成モデルを選択（Luma AI Ray 2 / Amazon Nova Reel / 使用しない）
    - 選択するとモデルの特徴が直下に表示される
 5. 「創作を開始」をクリック（指示未入力の場合はボタンが無効）
@@ -189,14 +205,50 @@ video1.mp4 と video2.mp4 を結合して
 
 ## エージェントのツール
 
+### ファイル操作
+
 | ツール | 機能 |
 |--------|------|
 | `list_files` | タスクに紐づく入力ファイル一覧を取得 |
+
+### 動画編集（MoviePy）
+
+| ツール | 機能 |
+|--------|------|
 | `trim_video` | 動画の指定時間範囲をトリミング |
-| `insert_image` | 動画の指定時間範囲に画像を挿入 |
+| `insert_image` | 動画の指定時間範囲に画像をフルフレーム挿入 |
+| `image_to_clip` | 静止画を指定秒数の動画クリップに変換（スライド動画作成） |
 | `concat_videos` | 複数動画を順番に結合 |
-| `generate_video` | テキストプロンプトから AI 動画を生成（Luma AI Ray 2） |
-| `generate_video_nova_reel` | テキストプロンプトから AI 動画を生成（Amazon Nova Reel） |
+| `add_text` | 字幕・テロップのオーバーレイ（日本語対応） |
+| `add_audio` | BGM・効果音を既存音声にミックス |
+| `replace_audio` | 音声トラックを差し替え |
+| `change_speed` | 再生速度変更（0.1〜10.0倍） |
+| `fade_in_out` | フェードイン・フェードアウト（映像＋音声） |
+| `crossfade_concat` | クロスフェードトランジション付き動画結合 |
+| `resize_crop` | 解像度変更・クロップ |
+| `rotate_flip` | 回転・反転（左右/上下） |
+| `overlay_image` | 画像の透過合成オーバーレイ（ロゴ・PinP） |
+| `extract_audio` | 音声をMP3で抽出 |
+| `adjust_volume` | 音量調整（0.0〜4.0倍） |
+| `color_filter` | カラーフィルター（grayscale / brightness / contrast） |
+
+### 動画分析
+
+| ツール | 機能 |
+|--------|------|
+| `analyze_video` | フレーム抽出 + Claude Vision で動画内容を分析 |
+| `transcribe_video` | Amazon Transcribe で音声をテキスト化（語レベルタイムスタンプ付き） |
+| `detect_scenes` | ffmpeg でシーンチェンジを自動検出 |
+
+### AI 生成
+
+| ツール | 機能 |
+|--------|------|
+| `generate_video` | テキストから動画生成（Luma AI Ray 2、5s/9s、720p/540p） |
+| `generate_video_nova_reel` | テキストから動画生成（Amazon Nova Reel、最大6s、1280×720固定） |
+| `generate_video_from_image` | 画像→動画生成（Luma AI Ray 2 image-to-video） |
+| `generate_image` | テキストから画像生成（Amazon Nova Canvas、PNG） |
+| `generate_speech` | テキスト音声合成（Amazon Polly、MP3） |
 
 ### generate_video パラメータ（Luma AI Ray 2）
 

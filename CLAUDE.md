@@ -20,13 +20,17 @@ video-edit-by-strands-agents/
 │       ├── create_task.py  # POST /tasks — DynamoDB 書き込み + ECS RunTask
 │       ├── get_task.py     # GET /tasks/{id} — ステータスポーリング
 │       ├── upload_url.py   # GET /upload-url — S3 presigned PUT URL
-│       └── download_url.py # GET /download-url/{id} — S3 presigned GET URL
+│       ├── download_url.py # GET /download-url/{id} — S3 presigned GET URL
+│       ├── chat.py         # POST /chat — チャット履歴 DynamoDB 保存・取得
+│       ├── analyzer.py     # S3 PUT トリガー — アップロードファイルを Claude Vision で即時分析
+│       └── delete_file.py  # DELETE /files — 入力ファイル削除（tasks/*/input/* のみ）
 ├── frontend/
 │   └── src/
 │       ├── App.tsx          # メイン 4 ステップ UI（日本語）
 │       ├── api/client.ts    # API Gateway クライアント
 │       ├── components/      # UploadZone, InstructionBox, TaskStatus, CompletionModal,
-│       │                    # ChatModal（AI チャットモード）, ChatPreviewModal（確定前プレビュー）,
+│       │                    # ChatModal（AI チャットモード）, ChatBox（チャット本体 + TypingDots）,
+│       │                    # ChatPreviewModal（確定前プレビュー）, DownloadButton,
 │       │                    # Stepper（水平ステッパー）, WelcomeModal（初回オンボーディング）,
 │       │                    # VideoPreview, etc.
 │       ├── hooks/useTaskPoller.ts  # タスクポーリング hook
@@ -36,10 +40,10 @@ video-edit-by-strands-agents/
     ├── variables.tf         # 変数定義（luma_s3_bucket_name, nova_reel_s3_bucket_name 等）
     ├── vpc.tf               # VPC / パブリックサブネット×2 / IGW
     ├── ecs.tf               # ECS クラスター + タスク定義（2vCPU / 4GB）
-    ├── lambda.tf            # Lambda 関数×4
+    ├── lambda.tf            # Lambda 関数×7
     ├── api_gateway.tf       # HTTP API v2
     ├── s3.tf                # assets バケット + frontend バケット
-    ├── dynamodb.tf          # tasks テーブル（task_id がパーティションキー）
+    ├── dynamodb.tf          # tasks / file_analysis / chat_sessions テーブル
     ├── iam.tf               # ECS 実行ロール / タスクロール / Lambda ロール
     ├── cloudfront.tf        # フロントエンド CDN
     ├── ecr.tf               # ECR リポジトリ
@@ -57,7 +61,7 @@ Browser → CloudFront (S3) → React/Vite UI
             ↓  POST /tasks → ECS RunTask
           ECS Fargate (ap-northeast-1)
             └─ Strands Agent (claude-sonnet-4-6, us-east-1)
-               ├─ MoviePy: 20種類の動画編集ツール
+               ├─ MoviePy: 25種類の動画編集・分析ツール
                ├─ Luma AI Ray 2 (luma.ray-v2:0, us-west-2)
                ├─ Amazon Nova Reel (amazon.nova-reel-v1:0, us-east-1)
                ├─ Amazon Nova Canvas (amazon.nova-canvas-v1:0, us-east-1)
@@ -75,7 +79,7 @@ Browser → CloudFront (S3) → React/Vite UI
 | S3 assets | ap-northeast-1 | 入出力ファイル |
 | S3 frontend | ap-northeast-1 | React 静的ファイル |
 | CloudFront | グローバル | フロントエンド CDN |
-| DynamoDB | ap-northeast-1 | タスクステータス |
+| DynamoDB | ap-northeast-1 | タスクステータス / ファイル分析結果 / チャット履歴 |
 | Bedrock (Claude) | us-east-1 | `us.anthropic.claude-sonnet-4-6` |
 | Bedrock (Luma) | us-west-2 | `luma.ray-v2:0` |
 | Bedrock (Nova) | us-east-1 | `amazon.nova-reel-v1:0` |
@@ -103,6 +107,10 @@ Browser → CloudFront (S3) → React/Vite UI
 | POST | /tasks | create_task.py | タスク作成 + Fargate 起動 |
 | GET | /tasks/{id} | get_task.py | ステータスポーリング |
 | GET | /download-url/{id} | download_url.py | S3 presigned GET URL |
+| POST | /chat | chat.py | AI チャット（DynamoDB session 管理） |
+| DELETE | /files | delete_file.py | 入力ファイル削除（tasks/*/input/* のみ） |
+
+> `analyzer.py` は API Gateway 経由ではなく S3 PUT イベントトリガー（Lambda）で動作する。
 
 ## ECS コンテナ 環境変数（RunTask 時に注入）
 
@@ -273,12 +281,29 @@ aws s3 sync dist/ s3://<frontend-bucket>/ --profile <your-aws-profile>
   - チャット会話履歴はサーバー側 DynamoDB（`CHAT_TABLE`）に `session_id` キーで保存（`backend/lambda/chat.py`）
 - タスク完了時に `CompletionModal` でプレビュー + ダウンロード
 
-## DynamoDB タスクステータス遷移
+## DynamoDB テーブル
+
+| テーブル名 | PK | 用途 |
+|-----------|-----|------|
+| `{project}-tasks` | `task_id` | タスクステータス管理 |
+| `{project}-file-analysis` | `s3_key` | アップロードファイルの分析結果（TTL 24h） |
+| `{project}-chat-sessions` | `session_id` | チャット会話履歴（`CHAT_TABLE`） |
+
+### タスクステータス遷移
 
 ```
 PENDING → RUNNING → COMPLETED（output_key あり）
                   → FAILED（output_key なし、または例外）
 ```
+
+### ファイル分析フロー（analyzer.py）
+
+1. ユーザーがファイルをアップロード → S3 `tasks/*/input/*` に PUT
+2. S3 PUT イベント → `analyzer` Lambda が自動起動
+3. 画像（JPG/PNG/WEBP）: Claude Vision でビジュアル分析
+4. 動画（MP4/MOV 等）: ファイル名・サイズから Claude がテキスト分析
+5. 分析結果を `file_analysis` テーブルに保存（TTL 24h）
+6. チャット init 時にフロントエンドが分析結果を参照してチャット提案を強化
 
 ## ツール一覧（backend/agent/tools.py）
 
@@ -292,8 +317,9 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 |---------|------|
 | `trim_video` | 動画トリミング（start_sec〜end_sec） |
 | `insert_image` | 動画への画像挿入（指定時間範囲でフルフレームオーバーレイ） |
+| `image_to_clip` | 静止画→動画クリップ変換（スライド風動画作成に使用） |
 | `concat_videos` | 複数動画の順番結合 |
-| `add_text` | 字幕・テロップのオーバーレイ（日本語/CJK対応） |
+| `add_text` | 字幕・テロップのオーバーレイ（日本語/CJK対応、IPA Gothic フォント使用） |
 | `add_audio` | BGM・効果音を既存音声にミックス |
 | `replace_audio` | 音声トラックを差し替え |
 | `change_speed` | 再生速度変更（スロー・早送り、0.1〜10.0倍） |
@@ -306,11 +332,19 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 | `adjust_volume` | 音量調整（0.0〜4.0倍） |
 | `color_filter` | カラーフィルター（grayscale / brightness / contrast） |
 
+### 動画分析
+| ツール名 | 説明 |
+|---------|------|
+| `analyze_video` | フレーム抽出 + Claude Vision で動画内容を分析（シーン・人物・雰囲気等） |
+| `transcribe_video` | Amazon Transcribe で動画の音声をテキスト化（語レベルタイムスタンプ付き） |
+| `detect_scenes` | ffmpeg でシーンチェンジを自動検出（タイムスタンプ一覧を返す） |
+
 ### AI 生成
 | ツール名 | 説明 |
 |---------|------|
 | `generate_video` | Luma AI Ray 2 でテキストから動画生成（5s/9s, 720p/540p, us-west-2） |
 | `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定, us-east-1） |
+| `generate_video_from_image` | Luma AI Ray 2 で画像→動画生成（image-to-video、us-west-2） |
 | `generate_image` | Amazon Nova Canvas で画像生成（PNG, us-east-1）。`negative_prompt` でネガティブプロンプト指定可 |
 | `generate_speech` | Amazon Polly でテキスト音声合成（MP3, ap-northeast-1） |
 

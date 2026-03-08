@@ -333,13 +333,7 @@ notepad infrastructure/variables.tf
 open -e infrastructure/variables.tf
 ```
 
-以下の 3 か所を編集します:
-
-```hcl
-variable "aws_profile" {
-  default = "deploy"   ← 4-6 で設定したプロファイル名（変更不要なら deploy のまま）
-}
-```
+以下の 2 か所を編集します:
 
 ```hcl
 variable "luma_s3_bucket_name" {
@@ -355,11 +349,16 @@ variable "nova_reel_s3_bucket_name" {
 
 ファイルを保存して閉じます。
 
+> **注意**: `aws_profile` は `variables.tf` に書かず、次のステップで `AWS_PROFILE` 環境変数として設定します。
+
 ### 7-2. SSO ログインを確認してから Terraform を実行
 
 ```bash
 # まず SSO セッションが有効か確認
 aws sso login --profile deploy
+
+# AWS_PROFILE 環境変数を設定（Terraform はこれを使用）
+export AWS_PROFILE=deploy
 
 # infrastructure フォルダへ移動
 cd infrastructure
