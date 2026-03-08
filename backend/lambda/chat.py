@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import boto3
 
 CHAT_TABLE = os.environ["CHAT_TABLE"]
+ANALYSIS_TABLE = os.environ.get("ANALYSIS_TABLE", "")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 MODEL_ID = "us.anthropic.claude-sonnet-4-6"
 
@@ -69,12 +70,33 @@ BASE_SYSTEM_PROMPT = """あなたはAI動画編集・生成スタジオのアシ
 - 承諾された場合は必ず「画面下の「確定して指示欄に反映」ボタンを押してください」と案内するだけにする"""
 
 
-def build_system_prompt(file_names: list) -> str:
+def build_system_prompt(file_names: list, analyses: list | None = None) -> str:
     prompt = BASE_SYSTEM_PROMPT
     if file_names:
         file_list = "\n".join(f"- {f}" for f in file_names)
         prompt += f"\n\n【現在選択されているファイル】\n{file_list}\n\nこれらのファイルを編集・加工することを前提として会話してください。"
+    if analyses:
+        analysis_text = "\n\n".join(analyses)
+        prompt += f"\n\n【ファイルの内容分析（AIによる事前分析）】\n{analysis_text}\n\nこの分析情報を参考に、より具体的な編集提案をしてください。"
     return prompt
+
+
+def fetch_analyses(input_keys: list) -> list:
+    """DynamoDB から各ファイルの分析結果を取得する。未完了・エラーはスキップ。"""
+    if not input_keys or not ANALYSIS_TABLE:
+        return []
+    table = dynamodb.Table(ANALYSIS_TABLE)
+    analyses = []
+    for key in input_keys:
+        try:
+            item = table.get_item(Key={"s3_key": key}).get("Item")
+            if item and item.get("status") == "completed" and item.get("analysis_text"):
+                filename = key.split("/")[-1]
+                analyses.append(f"【{filename}】\n{item['analysis_text']}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to fetch analysis for {key}: {e}")
+    return analyses
 
 
 CONFIRM_PROMPT = """以下の会話から動画編集・生成の指示文を1〜3文で生成してください。
@@ -100,7 +122,8 @@ def handler(event, context):
 
     if action == "init":
         file_names = body.get("file_names", [])
-        return handle_init(session_id, file_names)
+        input_keys = body.get("input_keys", [])
+        return handle_init(session_id, file_names, input_keys)
     elif action == "message":
         message = body.get("message", "").strip()
         if not message:
@@ -112,7 +135,7 @@ def handler(event, context):
         return error_response(400, f"Unknown action: {action}")
 
 
-def handle_init(session_id: str, file_names: list):
+def handle_init(session_id: str, file_names: list, input_keys: list):
     session = load_session(session_id)
     # セッション既存（再オープン）→ 既存履歴をそのまま返す
     if session.get("messages"):
@@ -123,14 +146,25 @@ def handle_init(session_id: str, file_names: list):
             "body": json.dumps({"messages": messages}, ensure_ascii=False),
         }
 
+    # ファイルの事前分析結果を取得（アップロード直後に analyzer Lambda が実行済みのもの）
+    analyses = fetch_analyses(input_keys)
+
     # 新規セッション: AIに挨拶メッセージを生成させる
     if file_names:
         file_list = "、".join(file_names)
-        init_prompt = f"ユーザーが以下のファイルを選択しました: {file_list}\n\nユーザーに簡潔に挨拶し、これらのファイルをどのように編集したいか聞いてください。"
+        if analyses:
+            analysis_text = "\n\n".join(analyses)
+            init_prompt = (
+                f"ユーザーが以下のファイルを選択しました: {file_list}\n\n"
+                f"【ファイル分析結果】\n{analysis_text}\n\n"
+                "上記の分析を踏まえ、ユーザーに挨拶して、具体的な編集提案を2〜3つ含めて案内してください。"
+            )
+        else:
+            init_prompt = f"ユーザーが以下のファイルを選択しました: {file_list}\n\nユーザーに簡潔に挨拶し、これらのファイルをどのように編集したいか聞いてください。"
     else:
         init_prompt = "ユーザーが動画編集・生成の指示を作るためにチャットを開始しました。簡潔に挨拶し、どのようなことをしたいか聞いてください。"
 
-    system = build_system_prompt(file_names)
+    system = build_system_prompt(file_names, analyses)
     reply = invoke_bedrock([{"role": "user", "content": init_prompt}], system_prompt=system)
 
     # AIの挨拶のみをセッション履歴として保存

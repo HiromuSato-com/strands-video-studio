@@ -84,14 +84,23 @@ export async function getDownloadUrl(
 
 export async function initChat(
   sessionId: string,
-  fileNames: string[]
+  fileNames: string[],
+  inputKeys?: string[]
 ): Promise<ChatInitResponse> {
   const { data } = await api.post<ChatInitResponse>("/chat", {
     session_id: sessionId,
     action: "init",
     file_names: fileNames,
+    ...(inputKeys && inputKeys.length > 0 && { input_keys: inputKeys }),
   });
   return data;
+}
+
+/**
+ * アップロード済み入力ファイルを S3 と DynamoDB 分析結果から削除する。
+ */
+export async function deleteFile(key: string): Promise<void> {
+  await api.delete("/files", { params: { key } });
 }
 
 export async function sendChatMessage(

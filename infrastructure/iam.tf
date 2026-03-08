@@ -158,6 +158,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
+          "s3:DeleteObject",
           "s3:ListBucket",
         ]
         Resource = [
@@ -174,6 +175,17 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:UpdateItem",
         ]
         Resource = aws_dynamodb_table.tasks.arn
+      },
+      {
+        Sid    = "FileAnalysisDynamoDBAccess"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+        ]
+        Resource = aws_dynamodb_table.file_analysis.arn
       },
       {
         Sid    = "ECSRunTask"
