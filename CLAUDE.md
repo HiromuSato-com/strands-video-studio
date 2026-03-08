@@ -60,7 +60,7 @@ Browser → CloudFront (S3) → React/Vite UI
                ├─ MoviePy: 20種類の動画編集ツール
                ├─ Luma AI Ray 2 (luma.ray-v2:0, us-west-2)
                ├─ Amazon Nova Reel (amazon.nova-reel-v1:0, us-east-1)
-               ├─ Stable Diffusion XL (stability.stable-diffusion-xl-v1, us-east-1)
+               ├─ Amazon Nova Canvas (amazon.nova-canvas-v1:0, us-east-1)
                └─ Amazon Polly (ap-northeast-1)
             ↕
           DynamoDB (task status)   S3 (assets, ap-northeast-1)
@@ -79,7 +79,7 @@ Browser → CloudFront (S3) → React/Vite UI
 | Bedrock (Claude) | us-east-1 | `us.anthropic.claude-sonnet-4-6` |
 | Bedrock (Luma) | us-west-2 | `luma.ray-v2:0` |
 | Bedrock (Nova) | us-east-1 | `amazon.nova-reel-v1:0` |
-| Bedrock (SDXL) | us-east-1 | `stability.stable-diffusion-xl-v1` |
+| Bedrock (Nova Canvas) | us-east-1 | `amazon.nova-canvas-v1:0` |
 | Amazon Polly | ap-northeast-1 | 音声合成（generate_speech） |
 | S3 Luma 出力 | us-west-2 | Bedrock コンソール自動作成バケット |
 | S3 Nova 出力 | us-east-1 | Bedrock コンソール自動作成バケット |
@@ -311,7 +311,7 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 |---------|------|
 | `generate_video` | Luma AI Ray 2 でテキストから動画生成（5s/9s, 720p/540p, us-west-2） |
 | `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定, us-east-1） |
-| `generate_image` | Stable Diffusion XL で画像生成（PNG, us-east-1） |
+| `generate_image` | Amazon Nova Canvas で画像生成（PNG, us-east-1）。`negative_prompt` でネガティブプロンプト指定可 |
 | `generate_speech` | Amazon Polly でテキスト音声合成（MP3, ap-northeast-1） |
 
 ## よくあるトラブル

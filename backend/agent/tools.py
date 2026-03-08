@@ -1044,19 +1044,17 @@ def generate_image(
     prompt: str,
     width: int = 1024,
     height: int = 1024,
-    cfg_scale: float = 7.0,
-    steps: int = 30,
+    negative_prompt: str = "",
 ) -> str:
     """
-    Generate an image from a text prompt using Stable Diffusion XL on Amazon Bedrock (us-east-1).
+    Generate an image from a text prompt using Amazon Nova Canvas on Amazon Bedrock (us-east-1).
     The generated image is saved to S3 as a PNG file.
 
     Args:
         prompt: Text description of the image to generate
-        width: Image width in pixels (default 1024, must be multiple of 64)
-        height: Image height in pixels (default 1024, must be multiple of 64)
-        cfg_scale: Classifier-free guidance scale — higher = follows prompt more strictly (default 7.0)
-        steps: Number of diffusion steps — more = higher quality but slower (default 30)
+        width: Image width in pixels (default 1024, must be multiple of 64, range 320-4096)
+        height: Image height in pixels (default 1024, must be multiple of 64, range 320-4096)
+        negative_prompt: Elements to exclude from the image (optional)
 
     Returns:
         S3 key of the generated image (PNG)
@@ -1065,20 +1063,29 @@ def generate_image(
 
     local_output = f"/tmp/{uuid.uuid4().hex}.png"
     try:
-        response = bedrock_nova.invoke_model(
-            modelId="stability.stable-diffusion-xl-v1",
-            body=json.dumps({
-                "text_prompts": [{"text": prompt, "weight": 1.0}],
-                "cfg_scale": cfg_scale,
-                "steps": steps,
+        body: dict = {
+            "taskType": "TEXT_IMAGE",
+            "textToImageParams": {
+                "text": prompt,
+            },
+            "imageGenerationConfig": {
+                "numberOfImages": 1,
                 "width": width,
                 "height": height,
-            }),
+                "cfgScale": 8.0,
+            },
+        }
+        if negative_prompt:
+            body["textToImageParams"]["negativeText"] = negative_prompt
+
+        response = bedrock_nova.invoke_model(
+            modelId="amazon.nova-canvas-v1:0",
+            body=json.dumps(body),
             contentType="application/json",
             accept="application/json",
         )
         result = json.loads(response["body"].read())
-        image_data = base64.b64decode(result["artifacts"][0]["base64"])
+        image_data = base64.b64decode(result["images"][0])
         with open(local_output, "wb") as f:
             f.write(image_data)
 
