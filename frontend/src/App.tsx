@@ -444,7 +444,7 @@ export default function App() {
                 <div className="flex flex-col gap-1.5 flex-shrink-0">
                   <label className="text-xs flex items-center gap-1.5" style={{ color: C.textSub }}>
                     <Clapperboard size={12} />
-                    AI動画生成モデル
+                    モード / 動画生成モデル
                   </label>
                   <select
                     value={videoModel}
@@ -459,7 +459,7 @@ export default function App() {
                       border: `1px solid ${C.border}`,
                       color: C.textMain,
                       appearance: "none",
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A7D6A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2020/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A7D6A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
                       backgroundRepeat: "no-repeat",
                       backgroundPosition: "right 10px center",
                       paddingRight: "28px",
@@ -467,54 +467,61 @@ export default function App() {
                     onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
                     onBlur={e => (e.currentTarget.style.borderColor = C.border)}
                   >
-                    <option value="none">使用しない</option>
+                    <option value="none">動画編集モード</option>
                     <option value="luma">Luma AI Ray 2</option>
                     <option value="nova_reel">Amazon Nova Reel</option>
                   </select>
 
                   {/* モデル情報パネル */}
-                  {videoModel !== "none" && (
-                    <div
-                      className="rounded-lg p-2.5 space-y-1.5 flex-shrink-0"
-                      style={{ background: C.badge, border: `1px solid ${C.border}` }}
-                    >
-                      {videoModel === "luma" && (
-                        <>
-                          <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
-                            🎬 Luma AI Ray 2 の特徴
-                          </p>
-                          <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
-                            <li>✦ 流体・煙・滝など複雑な物理現象を高精度にレンダリング</li>
-                            <li>✦ 人物の微妙な表情・手の動き・自然なボディランゲージの再現に優れる</li>
-                            <li>✦ スケール・遠近法・細部まで忠実に映像化する高い指示実行能力</li>
-                            <li>✦ プロモーション動画・製品モックアップ・VFX プレビズに最適</li>
-                          </ul>
-                          <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
-                            5s / 9s　540p〜720p　生成: 約2〜8分
-                          </p>
-                        </>
-                      )}
-                      {videoModel === "nova_reel" && (
-                        <>
-                          <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
-                            🎬 Amazon Nova Reel の特徴
-                          </p>
-                          <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
-                            <li>✦ カメラアングル・動きのコントロールが優れており、テンポ感のある映像演出が可能</li>
-                            <li>✦ ロゴやビジュアルアイデンティティをシーン全体で一貫して保持し、ブランド動画制作に強い</li>
-                            <li>✦ 製品中心のナラティブや企業ブランドのストーリーテリングに最適</li>
-                            <li>✦ 短尺シーンを低コストで量産でき、ストーリーボード検討の反復に向く</li>
-                          </ul>
-                          <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
-                            最大6s（〜120s）　1280×720固定　生成: 約90秒〜
-                          </p>
-                        </>
-                      )}
-                      <p className="text-[10px] leading-relaxed pt-1" style={{ color: C.textSub, borderTop: `1px solid ${C.border}` }}>
-                        日本語テロップを入れたい場合は、動画編集（AI生成なし）をお使いください。
-                      </p>
-                    </div>
-                  )}
+                  <div
+                    className="rounded-lg p-2.5 space-y-1.5 flex-shrink-0"
+                    style={{ background: C.badge, border: `1px solid ${C.border}` }}
+                  >
+                    {videoModel === "none" && (
+                      <>
+                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
+                          ✂ 動画編集モード
+                        </p>
+                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
+                          <li>✦ アップロードした動画をトリミング・結合・テロップ追加・BGMミックスで編集します</li>
+                          <li>✦ AI による動画生成は行いません（高速・低コスト）</li>
+                          <li>✦ 日本語テロップや字幕の追加に最適</li>
+                        </ul>
+                      </>
+                    )}
+                    {videoModel === "luma" && (
+                      <>
+                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
+                          🎬 Luma AI Ray 2 の特徴
+                        </p>
+                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
+                          <li>✦ 流体・煙・滝など複雑な物理現象を高精度にレンダリング</li>
+                          <li>✦ 人物の微妙な表情・手の動き・自然なボディランゲージの再現に優れる</li>
+                          <li>✦ スケール・遠近法・細部まで忠実に映像化する高い指示実行能力</li>
+                          <li>✦ プロモーション動画・製品モックアップ・VFX プレビズに最適</li>
+                        </ul>
+                        <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
+                          5s / 9s　540p〜720p　生成: 約2〜8分
+                        </p>
+                      </>
+                    )}
+                    {videoModel === "nova_reel" && (
+                      <>
+                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
+                          🎬 Amazon Nova Reel の特徴
+                        </p>
+                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
+                          <li>✦ カメラアングル・動きのコントロールが優れており、テンポ感のある映像演出が可能</li>
+                          <li>✦ ロゴやビジュアルアイデンティティをシーン全体で一貫して保持し、ブランド動画制作に強い</li>
+                          <li>✦ 製品中心のナラティブや企業ブランドのストーリーテリングに最適</li>
+                          <li>✦ 短尺シーンを低コストで量産でき、ストーリーボード検討の反復に向く</li>
+                        </ul>
+                        <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
+                          最大6s（〜120s）　1280×720固定　生成: 約90秒〜
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {submitError && (

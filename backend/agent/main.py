@@ -66,7 +66,7 @@ def main() -> None:
     update_task_status(table, task_id, status="RUNNING")
 
     try:
-        agent = create_agent()
+        agent = create_agent(video_model=video_model)
         logger.info(f"Executing instruction: {instruction}")
         result = agent(instruction)
 
