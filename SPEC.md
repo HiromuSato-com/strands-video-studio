@@ -63,8 +63,20 @@ API Gateway HTTP API v2
   |                                   -> S3 presigned GET URL 発行
   |
   +--[POST /chat]----------------> Lambda: chat.py
-                                      -> DynamoDB (CHAT_TABLE) に履歴保存
-                                      -> Bedrock Converse API (Claude Sonnet 4.6)
+  |                                   -> DynamoDB (CHAT_TABLE) に履歴保存
+  |                                   -> Bedrock Converse API (Claude Sonnet 4.6)
+  |
+  +--[DELETE /files]------------> Lambda: delete_file.py
+                                      -> S3 削除（tasks/*/input/* のみ）
+                                      -> DynamoDB (ANALYSIS_TABLE) から分析結果削除
+
+S3 (assets バケット)
+  |
+  +-- PUT イベント (tasks/*/input/*)
+       -> Lambda: analyzer.py (S3 トリガー)
+          -> 画像: Claude Vision で内容分析
+          -> 動画: ファイル名・サイズから Claude がテキスト分析
+          -> DynamoDB (ANALYSIS_TABLE) に保存 (TTL 24h)
 
 ECS Fargate タスク (ap-northeast-1)
   |
@@ -97,10 +109,11 @@ DynamoDB
 | S3 (frontend) | ap-northeast-1 | React 静的ファイル |
 | S3 (assets) | ap-northeast-1 | 入出力ファイル |
 | API Gateway | ap-northeast-1 | HTTP API v2 |
-| Lambda ×5 | ap-northeast-1 | API ハンドラー |
+| Lambda ×7 | ap-northeast-1 | API ハンドラー + S3 トリガー |
 | ECS Fargate | ap-northeast-1 | 動画処理コンテナ |
 | DynamoDB (tasks) | ap-northeast-1 | タスクステータス |
 | DynamoDB (chat) | ap-northeast-1 | チャット履歴 |
+| DynamoDB (file_analysis) | ap-northeast-1 | ファイル分析結果キャッシュ |
 | ECR | ap-northeast-1 | コンテナイメージ |
 | VPC | ap-northeast-1 | ネットワーク |
 | Amazon Polly | ap-northeast-1 | 音声合成 |
@@ -146,6 +159,19 @@ DynamoDB
 | `messages` | String | JSON 文字列（role/content 配列） |
 | `updated_at` | String | ISO 8601 UTC |
 
+#### file_analysis テーブル
+
+S3 アップロード直後に `analyzer.py` Lambda が書き込むファイル分析結果キャッシュ。
+
+| 属性 | 型 | 説明 |
+|-----|---|------|
+| `s3_key` | String (PK) | S3 オブジェクトキー（`tasks/*/input/*`） |
+| `status` | String | `processing` / `completed` / `failed` |
+| `file_type` | String | `image` / `video` / `other` |
+| `analysis_text` | String | Claude による分析テキスト |
+| `created_at` | String | ISO 8601 UTC |
+| `ttl` | Number | TTL（Unix timestamp、24時間後に自動削除） |
+
 ---
 
 ## 4. API 仕様
@@ -159,6 +185,9 @@ DynamoDB
 | GET | `/tasks/{id}` | `get_task.py` | タスクステータスポーリング |
 | GET | `/download-url/{id}` | `download_url.py` | S3 presigned GET URL 発行 |
 | POST | `/chat` | `chat.py` | AI チャット（指示内容の相談） |
+| DELETE | `/files` | `delete_file.py` | 入力ファイル削除（tasks/*/input/* のみ） |
+
+> `analyzer.py` は API Gateway 経由ではなく S3 PUT イベントトリガーで動作（API エンドポイントなし）。
 
 ### 4.2 GET /upload-url
 
@@ -357,6 +386,7 @@ COMPLETED   FAILED
 |-------|-------------|------|
 | `trim_video` | `input_key`, `start_sec`, `end_sec` | 動画トリミング |
 | `insert_image` | `video_key`, `image_key`, `start_sec`, `end_sec` | 画像をフルフレームオーバーレイ |
+| `image_to_clip` | `image_key`, `duration_sec`, `fps` | 静止画→動画クリップ変換（スライド動画作成用） |
 | `concat_videos` | `input_keys[]` | 複数動画の順番結合 |
 | `add_text` | `input_key`, `text`, `start_sec`, `end_sec`, `position`, `font_size`, `color` | 字幕・テロップ（日本語/CJK 対応） |
 | `add_audio` | `video_key`, `audio_key`, `volume`, `loop` | BGM・効果音のミックス |
@@ -595,10 +625,10 @@ infrastructure/
 ├── variables.tf     # 変数定義
 ├── vpc.tf           # VPC / パブリックサブネット×2 / IGW
 ├── ecs.tf           # ECS クラスター + タスク定義 (2vCPU / 4GB)
-├── lambda.tf        # Lambda 関数×5
+├── lambda.tf        # Lambda 関数×7（API ×5 + S3トリガー×1 + 削除×1）
 ├── api_gateway.tf   # HTTP API v2
 ├── s3.tf            # assets バケット + frontend バケット
-├── dynamodb.tf      # tasks テーブル + chat テーブル
+├── dynamodb.tf      # tasks / chat / file_analysis テーブル
 ├── iam.tf           # ECS 実行ロール / タスクロール / Lambda ロール
 ├── cloudfront.tf    # フロントエンド CDN
 ├── ecr.tf           # ECR リポジトリ
