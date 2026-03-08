@@ -64,19 +64,42 @@ def _upload_to_s3(local_path: str, filename: str) -> str:
 def list_files() -> str:
     """
     List all input files available for this task.
-    Returns a JSON string with file metadata (key, size, filename).
+    Returns a JSON string with file metadata (key, size, filename, duration_sec).
+    duration_sec is provided for video files so the agent can make accurate trim/fade decisions.
     """
+    import subprocess
+
     prefix = f"tasks/{TASK_ID}/input/"
     response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
     files = []
     for obj in response.get("Contents", []):
-        files.append(
-            {
-                "key": obj["Key"],
-                "filename": Path(obj["Key"]).name,
-                "size_bytes": obj["Size"],
-            }
-        )
+        key = obj["Key"]
+        suffix = Path(key).suffix.lower()
+        entry = {
+            "key": key,
+            "filename": Path(key).name,
+            "size_bytes": obj["Size"],
+        }
+        if suffix in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+            local_path = _download_from_s3(key, suffix)
+            try:
+                probe = subprocess.run(
+                    [
+                        "ffprobe", "-v", "quiet",
+                        "-show_entries", "format=duration",
+                        "-of", "json", local_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                probe_data = json.loads(probe.stdout)
+                entry["duration_sec"] = round(float(probe_data["format"]["duration"]), 3)
+            except Exception:
+                pass
+            finally:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+        files.append(entry)
     return json.dumps(files, ensure_ascii=False)
 
 
@@ -227,16 +250,16 @@ def concat_videos(input_keys: list[str]) -> str:
     output_filename = "concatenated.mp4"
     local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
 
+    clips = []
     try:
         clips = [VideoFileClip(p) for p in local_paths]
         final = concatenate_videoclips(clips)
         final.write_videofile(local_output, logger=None)
-        for clip in clips:
-            clip.close()
-
         output_key = _upload_to_s3(local_output, output_filename)
         return json.dumps({"output_key": output_key, "status": "success"})
     finally:
+        for clip in clips:
+            clip.close()
         for path in local_paths + [local_output]:
             if os.path.exists(path):
                 os.remove(path)
@@ -724,6 +747,7 @@ def crossfade_concat(input_keys: list[str], crossfade_sec: float = 0.5) -> str:
     output_filename = "crossfade_concat.mp4"
     local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
 
+    clips = []
     try:
         clips = [VideoFileClip(p) for p in local_paths]
         if len(clips) > 1 and crossfade_sec > 0:
@@ -739,12 +763,11 @@ def crossfade_concat(input_keys: list[str], crossfade_sec: float = 0.5) -> str:
         else:
             final = concatenate_videoclips(clips)
         final.write_videofile(local_output, logger=None)
-        for c in clips:
-            c.close()
-
         output_key = _upload_to_s3(local_output, output_filename)
         return json.dumps({"output_key": output_key, "status": "success"})
     finally:
+        for c in clips:
+            c.close()
         for path in local_paths + [local_output]:
             if os.path.exists(path):
                 os.remove(path)
