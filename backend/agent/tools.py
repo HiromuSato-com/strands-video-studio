@@ -28,7 +28,7 @@ s3 = boto3.client("s3")
 # Luma AI Ray 2 is only available in us-west-2 (Oregon)
 bedrock_luma = boto3.client("bedrock-runtime", region_name="us-west-2")
 s3_luma = boto3.client("s3", region_name="us-west-2")
-# Amazon Nova Reel, Stable Diffusion XL, and Claude Vision are available in us-east-1
+# Amazon Nova Reel, Nova Canvas, and Claude Vision are available in us-east-1
 bedrock_nova = boto3.client("bedrock-runtime", region_name="us-east-1")
 s3_nova = boto3.client("s3", region_name="us-east-1")
 polly = boto3.client("polly", region_name="ap-northeast-1")

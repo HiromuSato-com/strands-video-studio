@@ -23,7 +23,7 @@
 | LLM | Amazon Bedrock — Claude Sonnet 4.6 (`us.anthropic.claude-sonnet-4-6`) |
 | 動画編集 | MoviePy + ffmpeg (static build) |
 | AI 動画生成 | Luma AI Ray 2 (`luma.ray-v2:0`) / Amazon Nova Reel (`amazon.nova-reel-v1:0`) |
-| AI 画像生成 | Stable Diffusion XL (`stability.stable-diffusion-xl-v1`) |
+| AI 画像生成 | Amazon Nova Canvas (`amazon.nova-canvas-v1:0`) |
 | 音声合成 | Amazon Polly |
 | 音声認識 | Amazon Transcribe |
 | ストレージ | Amazon S3 |
@@ -74,7 +74,7 @@ ECS Fargate タスク (ap-northeast-1)
        +-- MoviePy: 動画編集 (/tmp/ ローカル処理)
        +-- Bedrock Luma (us-west-2): generate_video / generate_video_from_image
        +-- Bedrock Nova (us-east-1): generate_video_nova_reel
-       +-- Bedrock SDXL (us-east-1): generate_image
+       +-- Bedrock Nova Canvas (us-east-1): generate_image
        +-- Amazon Polly (ap-northeast-1): generate_speech
        +-- Amazon Transcribe (ap-northeast-1): transcribe_video
        +-- Claude Vision (us-east-1): analyze_video
@@ -107,7 +107,7 @@ DynamoDB
 | Amazon Transcribe | ap-northeast-1 | 音声認識 |
 | Bedrock (Claude) | us-east-1 | LLM 推論 |
 | Bedrock (Nova Reel) | us-east-1 | AI 動画生成 |
-| Bedrock (SDXL) | us-east-1 | AI 画像生成 |
+| Bedrock (Nova Canvas) | us-east-1 | AI 画像生成 |
 | S3 (Nova 出力) | us-east-1 | Nova Reel 生成中間ファイル |
 | Bedrock (Luma) | us-west-2 | AI 動画生成 |
 | S3 (Luma 出力) | us-west-2 | Luma AI 生成中間ファイル |
@@ -378,7 +378,7 @@ COMPLETED   FAILED
 | `generate_video` | Luma AI Ray 2 (`luma.ray-v2:0`) | us-west-2 | `prompt`, `duration` (5s/9s), `aspect_ratio`, `resolution` (720p/540p) | プロンプト 5000 文字以内 |
 | `generate_video_from_image` | Luma AI Ray 2 (image-to-video) | us-west-2 | `image_key`, `prompt`, `duration`, `aspect_ratio` | 最初のフレームに画像を使用 |
 | `generate_video_nova_reel` | Amazon Nova Reel (`amazon.nova-reel-v1:0`) | us-east-1 | `prompt`, `duration_sec` (1〜6) | プロンプト 512 文字以内、解像度 1280×720 固定 |
-| `generate_image` | Stable Diffusion XL | us-east-1 | `prompt`, `width`, `height`, `cfg_scale`, `steps` | サイズは 64 の倍数 |
+| `generate_image` | Amazon Nova Canvas (`amazon.nova-canvas-v1:0`) | us-east-1 | `prompt`, `width`, `height`, `negative_prompt` | サイズは 64 の倍数（320〜4096） |
 | `generate_speech` | Amazon Polly | ap-northeast-1 | `text`, `voice_id`, `engine` | 日本語: Takumi(男)/Kazuha(女) |
 
 ---
