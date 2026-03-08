@@ -442,11 +442,13 @@ def add_text(
     output_filename = f"text_{Path(video_key).name}"
     local_output = f"/tmp/{uuid.uuid4().hex}{suffix}"
 
-    # Locate a CJK-capable font (installed via fonts-noto-cjk in Dockerfile).
-    # fonts-noto-cjk installs .ttc (TrueType Collection) files, not .otf/.ttf,
-    # so .ttc must be included in the search patterns.
+    # Locate a Japanese-capable font.
+    # Priority: IPA P Gothic (.ttf) → IPA Gothic (.ttf) → Noto CJK (.ttc/.otf) → any font
+    # IPA fonts are standard .ttf files that PIL/MoviePy handles reliably for Japanese.
     font_path = None
     for pattern in [
+        "/usr/share/fonts/**/*ipagp*.ttf",   # IPA P Gothic (Japanese, sans-serif)
+        "/usr/share/fonts/**/*ipag*.ttf",    # IPA Gothic (Japanese, sans-serif)
         "/usr/share/fonts/**/*CJK*Regular*.ttc",
         "/usr/share/fonts/**/*Noto*CJK*.ttc",
         "/usr/share/fonts/**/*CJK*Regular*.otf",
