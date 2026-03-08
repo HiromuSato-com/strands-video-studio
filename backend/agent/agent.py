@@ -148,42 +148,49 @@ generate_video_nova_reel のパラメータ（Amazon Nova Reel）:
 """
 
 
-def create_agent() -> Agent:
+def create_agent(video_model: str = "luma") -> Agent:
     model = BedrockModel(
         model_id="us.anthropic.claude-sonnet-4-6",
         region_name="us-east-1",
     )
+
+    tools = [
+        list_files,
+        # 映像理解・分析
+        analyze_video,
+        transcribe_video,
+        detect_scenes,
+        # 動画編集（MoviePy）
+        trim_video,
+        insert_image,
+        image_to_clip,
+        concat_videos,
+        add_text,
+        add_audio,
+        replace_audio,
+        change_speed,
+        fade_in_out,
+        crossfade_concat,
+        resize_crop,
+        rotate_flip,
+        overlay_image,
+        extract_audio,
+        adjust_volume,
+        color_filter,
+        # AI静止画・音声生成（常に利用可能）
+        generate_image,
+        generate_speech,
+    ]
+
+    # 動画生成ツールは選択されたモデルに応じてのみ追加する
+    if video_model == "luma":
+        tools += [generate_video, generate_video_from_image]
+    elif video_model == "nova_reel":
+        tools += [generate_video_nova_reel]
+    # video_model == "none": 動画生成ツールは一切追加しない
+
     return Agent(
         model=model,
         system_prompt=SYSTEM_PROMPT,
-        tools=[
-            list_files,
-            # 映像理解・分析
-            analyze_video,
-            transcribe_video,
-            detect_scenes,
-            # 動画編集（MoviePy）
-            trim_video,
-            insert_image,
-            image_to_clip,
-            concat_videos,
-            add_text,
-            add_audio,
-            replace_audio,
-            change_speed,
-            fade_in_out,
-            crossfade_concat,
-            resize_crop,
-            rotate_flip,
-            overlay_image,
-            extract_audio,
-            adjust_volume,
-            color_filter,
-            # AI生成
-            generate_video,
-            generate_video_from_image,
-            generate_video_nova_reel,
-            generate_image,
-            generate_speech,
-        ],
+        tools=tools,
     )
