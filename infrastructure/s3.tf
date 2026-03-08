@@ -7,6 +7,74 @@ resource "aws_s3_bucket" "assets" {
   }
 }
 
+# S3 PUT イベント → Analyzer Lambda トリガー
+# aws_lambda_permission.analyzer_s3 が先に作られる必要があるため depends_on を明示
+resource "aws_s3_bucket_notification" "assets" {
+  bucket = aws_s3_bucket.assets.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".mp4"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".mov"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".jpg"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".jpeg"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".png"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.analyzer.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "tasks/"
+    filter_suffix       = ".webp"
+  }
+
+  depends_on = [aws_lambda_permission.analyzer_s3]
+}
+
+# 入力ファイルの自動クリーンアップ（7日後）
+resource "aws_s3_bucket_lifecycle_configuration" "assets" {
+  bucket = aws_s3_bucket.assets.id
+
+  rule {
+    id     = "expire-input-files"
+    status = "Enabled"
+
+    filter {
+      prefix = "tasks/"
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+}
+
 resource "aws_s3_bucket_cors_configuration" "assets" {
   bucket = aws_s3_bucket.assets.id
 

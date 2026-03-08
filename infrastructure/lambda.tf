@@ -39,6 +39,18 @@ data "archive_file" "chat" {
   output_path = "${path.module}/.lambda_zips/chat.zip"
 }
 
+data "archive_file" "analyzer" {
+  type        = "zip"
+  source_file = "${local.lambda_src_dir}/analyzer.py"
+  output_path = "${path.module}/.lambda_zips/analyzer.zip"
+}
+
+data "archive_file" "delete_file" {
+  type        = "zip"
+  source_file = "${local.lambda_src_dir}/delete_file.py"
+  output_path = "${path.module}/.lambda_zips/delete_file.zip"
+}
+
 # ─── Lambda functions ─────────────────────────────────────────────────────────
 resource "aws_lambda_function" "upload_url" {
   function_name    = "${var.project_name}-upload-url"
@@ -156,8 +168,9 @@ resource "aws_lambda_function" "chat" {
 
   environment {
     variables = merge(local.lambda_common_env, {
-      CHAT_TABLE     = aws_dynamodb_table.chat_sessions.name
-      BEDROCK_REGION = "us-east-1"
+      CHAT_TABLE      = aws_dynamodb_table.chat_sessions.name
+      ANALYSIS_TABLE  = aws_dynamodb_table.file_analysis.name
+      BEDROCK_REGION  = "us-east-1"
     })
   }
 
@@ -168,6 +181,65 @@ resource "aws_lambda_permission" "chat" {
   statement_id  = "AllowAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.chat.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+# ─── Analyzer Lambda (S3 PUT イベントトリガー) ─────────────────────────────────
+resource "aws_lambda_function" "analyzer" {
+  function_name    = "${var.project_name}-analyzer"
+  role             = aws_iam_role.lambda.arn
+  handler          = "analyzer.handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.analyzer.output_path
+  source_code_hash = data.archive_file.analyzer.output_base64sha256
+  timeout          = 60
+  memory_size      = 256
+
+  environment {
+    variables = {
+      S3_BUCKET      = aws_s3_bucket.assets.bucket
+      ANALYSIS_TABLE = aws_dynamodb_table.file_analysis.name
+      BEDROCK_REGION = "us-east-1"
+    }
+  }
+
+  tags = { Project = var.project_name }
+}
+
+# S3 がこの Lambda を呼び出すことを許可
+resource "aws_lambda_permission" "analyzer_s3" {
+  statement_id  = "AllowS3Invoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.analyzer.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.assets.arn
+}
+
+# ─── Delete File Lambda ────────────────────────────────────────────────────────
+resource "aws_lambda_function" "delete_file" {
+  function_name    = "${var.project_name}-delete-file"
+  role             = aws_iam_role.lambda.arn
+  handler          = "delete_file.handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.delete_file.output_path
+  source_code_hash = data.archive_file.delete_file.output_base64sha256
+  timeout          = 15
+
+  environment {
+    variables = {
+      S3_BUCKET      = aws_s3_bucket.assets.bucket
+      ANALYSIS_TABLE = aws_dynamodb_table.file_analysis.name
+    }
+  }
+
+  tags = { Project = var.project_name }
+}
+
+resource "aws_lambda_permission" "delete_file" {
+  statement_id  = "AllowAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.delete_file.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
