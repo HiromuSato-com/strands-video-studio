@@ -21,7 +21,6 @@ ECS_TASK_DEFINITION = os.environ["ECS_TASK_DEFINITION"]
 ECS_SUBNET_IDS = os.environ["ECS_SUBNET_IDS"].split(",")
 ECS_SECURITY_GROUP_ID = os.environ["ECS_SECURITY_GROUP_ID"]
 CONTAINER_NAME = os.environ.get("CONTAINER_NAME", "video-edit-agent")
-LUMA_S3_BUCKET = os.environ.get("LUMA_S3_BUCKET", "")
 NOVA_REEL_S3_BUCKET = os.environ.get("NOVA_REEL_S3_BUCKET", "")
 
 dynamodb = boto3.resource("dynamodb")
@@ -37,8 +36,8 @@ def handler(event, context):
     task_id = body.get("task_id", "").strip()
     instruction = body.get("instruction", "").strip()
     input_keys = body.get("input_keys", [])
-    video_model = body.get("video_model", "luma")
-    if video_model not in ("luma", "nova_reel", "none"):
+    video_model = body.get("video_model", "none")
+    if video_model not in ("nova_reel", "none"):
         video_model = "none"
 
     if not task_id:
@@ -83,7 +82,6 @@ def handler(event, context):
                         {"name": "DYNAMODB_TABLE", "value": DYNAMODB_TABLE},
                         {"name": "INSTRUCTION", "value": instruction},
                         {"name": "INPUT_KEYS", "value": json.dumps(input_keys)},
-                        {"name": "LUMA_S3_BUCKET", "value": LUMA_S3_BUCKET},
                         {"name": "NOVA_REEL_S3_BUCKET", "value": NOVA_REEL_S3_BUCKET},
                         {"name": "VIDEO_MODEL", "value": video_model},
                     ],
