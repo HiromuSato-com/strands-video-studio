@@ -22,12 +22,6 @@ variable "bedrock_region" {
   default     = "us-east-1"
 }
 
-variable "luma_s3_bucket_name" {
-  description = "Existing S3 bucket name (us-west-2) created by Bedrock console for Luma AI Ray 2 output. Enable luma.ray-v2:0 in Bedrock console (us-west-2) to auto-create this bucket."
-  type        = string
-  default     = ""
-}
-
 variable "nova_reel_s3_bucket_name" {
   description = "Existing S3 bucket name (us-east-1) created by Bedrock console for Amazon Nova Reel output. Enable amazon.nova-reel-v1:0 in Bedrock console (us-east-1) to auto-create this bucket."
   type        = string

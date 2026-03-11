@@ -119,39 +119,6 @@ resource "aws_s3_bucket_public_access_block" "assets" {
   restrict_public_buckets = true
 }
 
-# ─── Luma AI output bucket (Oregon / us-west-2) ──────────────────────────────
-# This bucket was auto-created by the Bedrock console when enabling Luma AI Ray 2.
-# We reference it as a data source rather than managing it with Terraform.
-data "aws_s3_bucket" "luma_output" {
-  provider = aws.uswest2
-  bucket   = var.luma_s3_bucket_name
-}
-
-# Allow Amazon Bedrock Luma AI async invoke to write generated videos to this bucket
-resource "aws_s3_bucket_policy" "luma_output" {
-  provider = aws.uswest2
-  bucket   = data.aws_s3_bucket.luma_output.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowBedrockLumaWrite"
-        Effect = "Allow"
-        Principal = {
-          Service = "bedrock.amazonaws.com"
-        }
-        Action   = "s3:PutObject"
-        Resource = "${data.aws_s3_bucket.luma_output.arn}/*"
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
-          }
-        }
-      }
-    ]
-  })
-}
-
 # ─── Nova Reel output bucket (N. Virginia / us-east-1) ───────────────────────
 # This bucket was auto-created by the Bedrock console when enabling Amazon Nova Reel.
 # We reference it as a data source rather than managing it with Terraform.

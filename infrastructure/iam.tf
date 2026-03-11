@@ -64,23 +64,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         ]
       },
       {
-        # Read/write Luma AI videos in the Oregon bucket.
-        # s3:PutObject is required because Bedrock validates that the caller
-        # (ECS task role) has write access before starting the async invoke job.
-        Sid    = "LumaS3Access"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          data.aws_s3_bucket.luma_output.arn,
-          "${data.aws_s3_bucket.luma_output.arn}/*",
-        ]
-      },
-      {
         # Read/write Nova Reel videos in the N. Virginia bucket.
         # s3:PutObject is required because Bedrock validates that the caller
         # (ECS task role) has write access before starting the async invoke job.
