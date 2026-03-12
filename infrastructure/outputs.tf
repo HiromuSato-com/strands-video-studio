@@ -28,11 +28,6 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.agent.repository_url
 }
 
-output "luma_output_bucket" {
-  description = "S3 bucket name (us-west-2) for Luma AI generated video output"
-  value       = data.aws_s3_bucket.luma_output.bucket
-}
-
 output "nova_reel_output_bucket" {
   description = "S3 bucket name (us-east-1) for Amazon Nova Reel generated video output"
   value       = data.aws_s3_bucket.nova_reel_output.bucket
