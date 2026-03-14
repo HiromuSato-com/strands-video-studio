@@ -17,6 +17,8 @@ import time
 from datetime import datetime, timezone
 
 import boto3
+from mcp import StdioServerParameters, stdio_client
+from strands.tools.mcp import MCPClient
 from agent import create_agent
 from tools import get_last_output_key
 
@@ -82,8 +84,27 @@ def main() -> None:
     logger.info(f"Starting task {task_id}")
     update_task_status(table, task_id, status="RUNNING")
 
+    tavily_api_key = os.environ.get("TAVILY_API_KEY", "")
+
     try:
-        agent = create_agent(video_model=video_model)
+        # Tavily MCP クライアントを起動（API キーがあるときのみ）
+        mcp_tools = []
+        tavily_client = None
+        if tavily_api_key:
+            tavily_client = MCPClient(
+                lambda: stdio_client(
+                    StdioServerParameters(
+                        command="tavily-mcp",
+                        args=[],
+                        env={**os.environ, "TAVILY_API_KEY": tavily_api_key},
+                    )
+                )
+            )
+            tavily_client.__enter__()
+            mcp_tools = tavily_client.list_tools_sync()
+            logger.info(f"Tavily MCP tools loaded: {[t.tool_name for t in mcp_tools]}")
+
+        agent = create_agent(video_model=video_model, extra_tools=mcp_tools)
         logger.info(f"Executing instruction: {instruction}")
         result = agent(instruction)
 
@@ -154,6 +175,12 @@ def main() -> None:
             error_message=str(e)[:2000],
         )
         raise
+    finally:
+        if tavily_client:
+            try:
+                tavily_client.__exit__(None, None, None)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
