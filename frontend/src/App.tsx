@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   Paperclip, Film, ImageIcon, X, Send, Sparkles,
-  RotateCcw, Download, Clapperboard, Film as FilmIcon,
+  RotateCcw, Download, Clapperboard, MessageSquare,
 } from "lucide-react";
 import { CharacterAvatar, type CharacterState } from "./components/CharacterAvatar";
 import { VideoPreview } from "./components/VideoPreview";
@@ -19,10 +19,8 @@ const C = {
   bg:         "#080412",
   panel:      "rgba(14, 6, 30, 0.92)",
   border:     "rgba(139, 92, 246, 0.28)",
-  borderHov:  "rgba(192, 132, 252, 0.60)",
   accent:     "#C084FC",
   accent2:    "#22D3EE",
-  accentPink: "#F9A8D4",
   textMain:   "#EDE9FE",
   textSub:    "#C4B5FD",
   textMuted:  "#7C6AAE",
@@ -60,6 +58,14 @@ const STATE_LABEL: Record<CharacterState, string> = {
   error:    "エラー 😥",
 };
 
+const STATE_COLOR: Record<CharacterState, string> = {
+  idle:     C.textMuted,
+  thinking: C.accent2,
+  working:  C.yellow,
+  complete: C.green,
+  error:    C.red,
+};
+
 // ── Inline task progress card ─────────────────────────────────────────────────
 function TaskProgressCard({
   task,
@@ -80,7 +86,7 @@ function TaskProgressCard({
 
   return (
     <div
-      className="rounded-xl p-3 space-y-2 text-xs"
+      className="rounded-xl p-3 space-y-2 text-xs w-full"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-center justify-between">
@@ -95,12 +101,7 @@ function TaskProgressCard({
             <div
               key={i}
               className="h-1.5 flex-1 rounded-sm transition-all duration-700"
-              style={{
-                background:
-                  i < filled
-                    ? info.color
-                    : "rgba(139,92,246,0.12)",
-              }}
+              style={{ background: i < filled ? info.color : "rgba(139,92,246,0.12)" }}
             />
           ))}
         </div>
@@ -109,9 +110,7 @@ function TaskProgressCard({
         <p style={{ color: C.red }}>{task.error_message}</p>
       )}
       {pollingError && (
-        <p className="text-[10px]" style={{ color: C.red }}>
-          接続エラー: {pollingError}
-        </p>
+        <p className="text-[10px]" style={{ color: C.red }}>接続エラー: {pollingError}</p>
       )}
     </div>
   );
@@ -134,11 +133,39 @@ export default function App() {
   const [taskId,       setTaskId]       = useState<string | null>(null);
   const [downloadUrl,  setDownloadUrl]  = useState<string | null>(null);
   const [isDragging,   setIsDragging]   = useState(false);
+  // 会話ログパネル
+  const [showChatLog, setShowChatLog]  = useState(false);
+  const [logBadge,    setLogBadge]     = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollRef    = useRef<HTMLDivElement>(null);
+  const logScrollRef = useRef<HTMLDivElement>(null);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
+
+  // ── 最新 AI メッセージ（字幕用）────────────────────────────────────────────
+  const lastAiMessage = useMemo(() => {
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const item = timeline[i];
+      if (item.kind === "msg" && item.role === "assistant") return item.content;
+    }
+    return "";
+  }, [timeline]);
+
+  // 字幕テキスト（改行を空白に変換 + 120 字で省略）
+  const subtitleText = useMemo(() => {
+    const oneLine = lastAiMessage.replace(/\n/g, "  ");
+    return oneLine.length > 120 ? oneLine.slice(0, 120) + "…" : oneLine;
+  }, [lastAiMessage]);
+
+  // ── 未読バッジ（ログを閉じている間に新メッセージが来たらカウント）──────────
+  const prevLen = useRef(timeline.length);
+  useEffect(() => {
+    if (!showChatLog && timeline.length > prevLen.current) {
+      const added = timeline.slice(prevLen.current);
+      if (added.some(i => i.kind !== "file")) setLogBadge(b => b + 1);
+    }
+    prevLen.current = timeline.length;
+  }, [timeline, showChatLog]);
 
   // ── Derived character state ───────────────────────────────────────────────
   const characterState = useMemo<CharacterState>(() => {
@@ -157,11 +184,13 @@ export default function App() {
   const addMsg = (role: "user" | "assistant", content: string) =>
     setTimeline(prev => [...prev, { id: tid(), kind: "msg", role, content }]);
 
-  // ── Auto-scroll ───────────────────────────────────────────────────────────
+  // ── ログパネル自動スクロール ──────────────────────────────────────────────
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [timeline, chatLoading, task?.status]);
+    if (showChatLog) {
+      const el = logScrollRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [timeline, chatLoading, showChatLog, task?.status]);
 
   // ── Sound on status change ────────────────────────────────────────────────
   const prevStatus = useRef<string | null>(null);
@@ -173,7 +202,7 @@ export default function App() {
     if (task.status === "FAILED")    playSound(Snd.SOUNDS.CAUTION);
   }, [task?.status]); // eslint-disable-line
 
-  // ── Task completion: add video item + celebrate ───────────────────────────
+  // ── Task completion ───────────────────────────────────────────────────────
   const handleCompleted = useCallback(
     async (completedTaskId: string) => {
       if (downloadUrl) return;
@@ -185,6 +214,9 @@ export default function App() {
           { id: tid(), kind: "video", url: res.download_url, key: res.output_key },
         ]);
         addMsg("assistant", "完成したよ🎉 動画を確認してみてね！\nダウンロードボタンから保存もできるよ✨");
+        // 完成したら自動でログを開く
+        setShowChatLog(true);
+        setLogBadge(0);
       } catch (e) {
         console.error("Failed to get download URL", e);
       }
@@ -209,24 +241,17 @@ export default function App() {
     async (incoming: File[]) => {
       const valid = incoming.filter(f => ACCEPTED_RE.test(f.name));
 
-      // Delete removed files from S3
       const newFileKeys = new Set(valid.map(f => `${f.name}-${f.size}`));
       for (const prev of files) {
         const fk = `${prev.name}-${prev.size}`;
         if (!newFileKeys.has(fk)) {
           const s3k = inputKeyMap.get(fk);
           if (s3k) deleteFile(s3k).catch(() => {});
-          setInputKeyMap(m => {
-            const n = new Map(m);
-            n.delete(fk);
-            return n;
-          });
+          setInputKeyMap(m => { const n = new Map(m); n.delete(fk); return n; });
         }
       }
-
       setFiles(valid);
 
-      // Upload newly added files
       const prevFileKeys = new Set(files.map(f => `${f.name}-${f.size}`));
       const newFiles = valid.filter(f => !prevFileKeys.has(`${f.name}-${f.size}`));
       if (newFiles.length === 0) return;
@@ -237,7 +262,6 @@ export default function App() {
       ]);
       playSound(Snd.SOUNDS.TAP);
 
-      // Upload and collect keys
       const newMap = new Map(inputKeyMap);
       for (const file of newFiles) {
         try {
@@ -250,7 +274,6 @@ export default function App() {
       }
       setInputKeyMap(newMap);
 
-      // ムービィ greets the uploaded files
       setChatLoading(true);
       try {
         const allNames = valid.map(f => f.name);
@@ -270,13 +293,11 @@ export default function App() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const incoming = Array.from(e.dataTransfer.files);
-    handleFilesSelected([...files, ...incoming]);
+    handleFilesSelected([...files, ...Array.from(e.dataTransfer.files)]);
   };
 
   const removeFile = (index: number) => {
-    const next = files.filter((_, i) => i !== index);
-    handleFilesSelected(next);
+    handleFilesSelected(files.filter((_, i) => i !== index));
     playSound(Snd.SOUNDS.TAP);
   };
 
@@ -305,7 +326,6 @@ export default function App() {
     let instruction = inputText.trim();
 
     if (!instruction) {
-      // Confirm instruction from chat history
       const hasUserMsg = timeline.some(i => i.kind === "msg" && i.role === "user");
       if (!hasUserMsg) {
         addMsg(
@@ -329,9 +349,7 @@ export default function App() {
       setInputText("");
     }
 
-    const preview = instruction.length > 60
-      ? instruction.slice(0, 60) + "…"
-      : instruction;
+    const preview = instruction.length > 60 ? instruction.slice(0, 60) + "…" : instruction;
     addMsg("assistant", `了解！「${preview}」で製作開始するね⚡\nしばらく待っててね🎬`);
     playSound(Snd.SOUNDS.BUTTON);
     setStep("uploading");
@@ -343,7 +361,7 @@ export default function App() {
       const { task_id } = await createTask(workingTaskId, instruction, uploadedKeys, videoModel);
       setTaskId(task_id);
       setStep("submitted");
-    } catch (e) {
+    } catch {
       setStep("idle");
       addMsg("assistant", "タスクの作成に失敗しちゃった😥 もう一度試してね！");
     }
@@ -363,6 +381,7 @@ export default function App() {
     setTaskId(null);
     setDownloadUrl(null);
     setChatLoading(false);
+    setLogBadge(0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -385,11 +404,11 @@ export default function App() {
       {/* ── Drag overlay ── */}
       {isDragging && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(124,58,237,0.25)", border: "3px dashed rgba(192,132,252,0.8)" }}
+          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+          style={{ background: "rgba(124,58,237,0.22)", border: "3px dashed rgba(192,132,252,0.75)" }}
         >
           <div className="text-center" style={{ color: C.accent }}>
-            <FilmIcon size={48} className="mx-auto mb-3 opacity-80" />
+            <Paperclip size={44} className="mx-auto mb-3 opacity-80" />
             <p className="text-xl font-bold">ドロップしてね！</p>
           </div>
         </div>
@@ -397,423 +416,434 @@ export default function App() {
 
       {/* ── Header ── */}
       <header
-        className="flex-shrink-0 flex items-center justify-between px-6 py-2 relative z-10"
+        className="flex-shrink-0 flex items-center justify-between px-5 py-2 relative z-10"
         style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(8,4,18,0.90)" }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-lg font-bold" style={{ color: C.accent }}>
+          <span className="text-base font-bold" style={{ color: C.accent }}>
             🎬 ムービィ AI Studio
           </span>
           <span className="text-[10px] hidden sm:block" style={{ color: C.textMuted }}>
             Strands Agents · Claude Sonnet · Bedrock
           </span>
         </div>
-        {(step === "submitted" || !!downloadUrl) && (
+
+        <div className="flex items-center gap-2">
+          {/* 会話ログ ボタン */}
           <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-            style={{ border: `1px solid ${C.border}`, color: C.textSub }}
+            onClick={() => {
+              setShowChatLog(v => !v);
+              setLogBadge(0);
+            }}
+            className="relative flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+            style={{
+              border: `1px solid ${showChatLog ? C.accent : C.border}`,
+              color: showChatLog ? C.accent : C.textSub,
+              background: showChatLog ? "rgba(192,132,252,0.10)" : "transparent",
+            }}
             onMouseEnter={e => {
               e.currentTarget.style.borderColor = C.accent;
               e.currentTarget.style.color = C.accent;
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.borderColor = C.border;
-              e.currentTarget.style.color = C.textSub;
+              e.currentTarget.style.borderColor = showChatLog ? C.accent : C.border;
+              e.currentTarget.style.color = showChatLog ? C.accent : C.textSub;
             }}
           >
-            <RotateCcw size={12} />
-            新しい創作
+            <MessageSquare size={13} />
+            会話ログ
+            {/* 未読バッジ */}
+            {logBadge > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+                style={{ background: C.accent, color: "#1A0832" }}
+              >
+                {logBadge > 9 ? "9+" : logBadge}
+              </span>
+            )}
           </button>
-        )}
+
+          {/* 新しい創作 */}
+          {(step === "submitted" || !!downloadUrl) && (
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+              style={{ border: `1px solid ${C.border}`, color: C.textSub }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSub; }}
+            >
+              <RotateCcw size={12} />
+              新しい創作
+            </button>
+          )}
+        </div>
       </header>
 
       {/* ── Main body ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative z-10">
 
-        {/* ─── Left: Character panel ─── */}
-        <div
-          className="w-52 flex-shrink-0 flex flex-col items-center gap-4 py-6 px-3 overflow-y-auto vtuber-scroll"
-          style={{ borderRight: `1px solid ${C.border}`, background: "rgba(8,4,20,0.60)" }}
-        >
-          {/* Avatar */}
-          <CharacterAvatar state={characterState} size={160} />
+        {/* ─── Center: Character stage ─── */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 py-4 overflow-hidden">
+
+          {/* Character avatar (large, center stage) */}
+          <CharacterAvatar state={characterState} size={240} />
 
           {/* Name + state */}
           <div className="text-center">
-            <p className="font-bold text-sm" style={{ color: C.textMain }}>ムービィ</p>
+            <p className="font-bold text-xl tracking-wide" style={{ color: C.textMain }}>
+              ムービィ
+            </p>
             <p
-              className="text-[11px] mt-0.5"
-              style={{
-                color: characterState === "working"
-                  ? C.yellow
-                  : characterState === "complete"
-                    ? C.green
-                    : characterState === "error"
-                      ? C.red
-                      : C.textMuted,
-              }}
+              className="text-sm mt-1 font-medium"
+              style={{ color: STATE_COLOR[characterState] }}
             >
               {STATE_LABEL[characterState]}
             </p>
           </div>
 
-          {/* Divider */}
-          <div className="w-full h-px" style={{ background: C.border }} />
+          {/* Speech bubble (subtitle) */}
+          {subtitleText && (
+            <div
+              className="max-w-xl w-full rounded-2xl px-6 py-3 text-sm text-center leading-relaxed"
+              style={{
+                background: "rgba(14,6,34,0.82)",
+                border: `1px solid ${C.border}`,
+                backdropFilter: "blur(10px)",
+                color: C.textMain,
+              }}
+            >
+              {subtitleText}
+            </div>
+          )}
 
-          {/* File section */}
-          <div className="w-full space-y-1.5">
-            <p className="text-[10px] font-medium px-1" style={{ color: C.textMuted }}>
-              添付ファイル{files.length > 0 ? ` (${files.length}件)` : ""}
-            </p>
+          {/* Typing indicator in center */}
+          {chatLoading && (
+            <div className="flex items-center gap-2">
+              {[0, 160, 320].map(d => (
+                <span
+                  key={d}
+                  className="w-2.5 h-2.5 rounded-full inline-block"
+                  style={{
+                    background: C.accent,
+                    animation: `typingPulse 1.2s ease-in-out ${d}ms infinite`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
-            {files.length === 0 ? (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex flex-col items-center justify-center gap-2 p-4 rounded-xl text-xs transition-all"
-                style={{
-                  border: `1.5px dashed ${C.border}`,
-                  color: C.textMuted,
-                  background: "rgba(139,92,246,0.05)",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = C.accent;
-                  e.currentTarget.style.color = C.accent;
-                  e.currentTarget.style.background = "rgba(192,132,252,0.08)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = C.border;
-                  e.currentTarget.style.color = C.textMuted;
-                  e.currentTarget.style.background = "rgba(139,92,246,0.05)";
-                }}
-              >
-                <Paperclip size={20} />
-                <span>ドロップ or クリック</span>
-                <span className="text-[9px]" style={{ color: C.textMuted }}>
-                  動画・画像を追加
-                </span>
-              </button>
-            ) : (
-              <ul className="space-y-1">
-                {files.map((f, i) => (
-                  <li
-                    key={`${f.name}-${f.size}`}
-                    className="flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg"
-                    style={{ background: "rgba(139,92,246,0.10)", border: `1px solid ${C.border}` }}
-                  >
-                    <span style={{ color: C.textMuted, flexShrink: 0 }}>
-                      {f.type.startsWith("video") ? <Film size={10} /> : <ImageIcon size={10} />}
-                    </span>
-                    <span className="truncate flex-1" style={{ color: C.textSub }}>{f.name}</span>
-                    <button
-                      onClick={() => removeFile(i)}
-                      className="flex-shrink-0 transition-colors"
-                      style={{ color: C.textMuted }}
-                      onMouseEnter={e => (e.currentTarget.style.color = C.red)}
-                      onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
-                    >
-                      <X size={10} />
-                    </button>
-                  </li>
-                ))}
-                <li>
+          {/* Task progress card */}
+          {step === "submitted" && task && (
+            <div className="w-full max-w-md">
+              <TaskProgressCard task={task} pollingError={pollingError} />
+            </div>
+          )}
+          {(step === "uploading" || (step === "submitted" && !task)) && (
+            <div className="flex items-center gap-2 text-xs" style={{ color: C.textMuted }}>
+              <div
+                className="w-3 h-3 border-2 rounded-full animate-spin"
+                style={{ borderColor: `${C.accent} transparent` }}
+              />
+              {step === "uploading" ? "アップロード中..." : "エージェント起動中..."}
+            </div>
+          )}
+
+          {/* Download button when complete */}
+          {downloadUrl && task?.status === "COMPLETED" && (
+            <a
+              href={downloadUrl}
+              download
+              onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
+              className="flex items-center gap-2 px-8 py-3 rounded-xl text-sm font-semibold transition-all"
+              style={{ background: C.accent, color: "#1A0832" }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+            >
+              <Download size={16} />
+              完成動画をダウンロード
+            </a>
+          )}
+
+          {/* Attached file chips */}
+          {files.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-1.5 max-w-lg">
+              {files.map((f, i) => (
+                <span
+                  key={`${f.name}-${f.size}`}
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full"
+                  style={{
+                    background: "rgba(139,92,246,0.12)",
+                    border: `1px solid ${C.border}`,
+                    color: C.textSub,
+                  }}
+                >
+                  {f.type.startsWith("video") ? <Film size={9} /> : <ImageIcon size={9} />}
+                  <span className="max-w-[120px] truncate">{f.name}</span>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full text-center text-[10px] py-1 rounded transition-colors"
+                    onClick={() => removeFile(i)}
+                    className="ml-0.5 transition-colors"
                     style={{ color: C.textMuted }}
-                    onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
+                    onMouseEnter={e => (e.currentTarget.style.color = C.red)}
                     onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
                   >
-                    + ファイルを追加
+                    <X size={9} />
                   </button>
-                </li>
-              </ul>
-            )}
-          </div>
-        </div>
-
-        {/* ─── Right: Chat area ─── */}
-        <div className="flex flex-1 flex-col min-w-0">
-
-          {/* Chat timeline */}
-          <div
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto p-4 space-y-3 vtuber-scroll"
-          >
-            {timeline.map(item => {
-              /* ── Chat message ── */
-              if (item.kind === "msg") {
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex ${item.role === "user" ? "justify-end" : "justify-start"} items-end gap-2`}
-                  >
-                    {item.role === "assistant" && (
-                      <div
-                        className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
-                        style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
-                      >
-                        🎬
-                      </div>
-                    )}
-                    <div
-                      className="max-w-[72%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
-                      style={
-                        item.role === "user"
-                          ? {
-                              background: C.userBubble,
-                              color: "#F5F3FF",
-                              borderBottomRightRadius: 4,
-                            }
-                          : {
-                              background: C.aiBubble,
-                              color: C.textMain,
-                              border: `1px solid ${C.border}`,
-                              borderBottomLeftRadius: 4,
-                            }
-                      }
-                    >
-                      <p className="whitespace-pre-wrap">{item.content}</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              /* ── File notification ── */
-              if (item.kind === "file") {
-                return (
-                  <div key={item.id} className="flex justify-center">
-                    <div
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px]"
-                      style={{
-                        background: "rgba(139,92,246,0.14)",
-                        border: `1px solid ${C.border}`,
-                        color: C.textMuted,
-                      }}
-                    >
-                      <Paperclip size={11} />
-                      {item.names.join("、")} を添付したよ
-                    </div>
-                  </div>
-                );
-              }
-
-              /* ── Completed video ── */
-              if (item.kind === "video") {
-                return (
-                  <div key={item.id} className="space-y-2 max-w-xl">
-                    <VideoPreview src={item.url} />
-                    <a
-                      href={item.url}
-                      download={item.key.split("/").pop() ?? "output.mp4"}
-                      onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
-                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold transition-all"
-                      style={{ background: C.accent, color: "#1A0832" }}
-                      onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                      onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
-                    >
-                      <Download size={15} />
-                      ダウンロード
-                    </a>
-                  </div>
-                );
-              }
-
-              return null;
-            })}
-
-            {/* Task progress (inline, follows messages) */}
-            {step === "submitted" && task && (
-              <TaskProgressCard task={task} pollingError={pollingError} />
-            )}
-            {step === "uploading" && (
-              <div className="flex items-center gap-2 text-xs" style={{ color: C.textMuted }}>
-                <div
-                  className="w-3 h-3 border-2 rounded-full animate-spin"
-                  style={{ borderColor: `${C.accent} transparent` }}
-                />
-                アップロード中...
-              </div>
-            )}
-            {step === "submitted" && !task && (
-              <div className="flex items-center gap-2 text-xs" style={{ color: C.textMuted }}>
-                <div
-                  className="w-3 h-3 border-2 rounded-full animate-spin"
-                  style={{ borderColor: `${C.accent} transparent` }}
-                />
-                エージェント起動中...
-              </div>
-            )}
-
-            {/* Typing indicator */}
-            {chatLoading && (
-              <div className="flex items-end gap-2">
-                <div
-                  className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
-                  style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
-                >
-                  🎬
-                </div>
-                <div
-                  className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-bl-sm"
-                  style={{ background: C.aiBubble, border: `1px solid ${C.border}` }}
-                >
-                  {[0, 160, 320].map(d => (
-                    <span
-                      key={d}
-                      className="w-2 h-2 rounded-full inline-block"
-                      style={{
-                        background: C.accent,
-                        animation: `typingPulse 1.2s ease-in-out ${d}ms infinite`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Scroll anchor */}
-            <div className="h-1" />
-          </div>
-
-          {/* ── Bottom input bar ── */}
-          <div
-            className="flex-shrink-0 px-3 py-3 space-y-2"
-            style={{ borderTop: `1px solid ${C.border}`, background: "rgba(8,4,18,0.96)" }}
-          >
-            {/* Model select row */}
-            <div className="flex items-center gap-2">
-              <Clapperboard size={12} style={{ color: C.textMuted }} />
-              <select
-                value={videoModel}
-                onChange={e => {
-                  const v = e.target.value as VideoModel;
-                  if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
-                  setVideoModel(v);
-                }}
-                disabled={isProcessing}
-                className="text-xs rounded-lg px-3 py-1.5 outline-none cursor-pointer"
-                style={{
-                  background: "rgba(139,92,246,0.10)",
-                  border: `1px solid ${C.border}`,
-                  color: C.textSub,
-                  appearance: "none",
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-                onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-              >
-                <option value="none">🎞 動画編集モード</option>
-                <option value="nova_reel">🤖 Amazon Nova Reel</option>
-              </select>
-
-              {isProcessing && step !== "idle" && (
-                <span className="text-[10px] ml-auto" style={{ color: C.textMuted }}>
-                  {step === "uploading"
-                    ? "アップロード中..."
-                    : task
-                      ? `${task.status}`
-                      : "エージェント起動中..."}
                 </span>
-              )}
+              ))}
             </div>
-
-            {/* Input row */}
-            <div className="flex items-end gap-2">
-              {/* File attach */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessing}
-                className="flex-shrink-0 p-2.5 rounded-xl transition-all"
-                style={{
-                  background: "rgba(139,92,246,0.10)",
-                  border: `1px solid ${C.border}`,
-                  color: C.textMuted,
-                  opacity: isProcessing ? 0.5 : 1,
-                }}
-                onMouseEnter={e => {
-                  if (!isProcessing) e.currentTarget.style.color = C.accent;
-                }}
-                onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
-                title="ファイルを添付"
-              >
-                <Paperclip size={16} />
-              </button>
-
-              {/* Textarea */}
-              <textarea
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  isProcessing
-                    ? "処理中です..."
-                    : "ムービィに話しかける（Enter で送信 / Shift+Enter で改行）"
-                }
-                disabled={isProcessing}
-                rows={2}
-                className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={{
-                  background: "rgba(139,92,246,0.07)",
-                  border: `1px solid ${C.border}`,
-                  color: C.textMain,
-                  opacity: isProcessing ? 0.5 : 1,
-                  transition: "border-color 0.15s",
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-                onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-              />
-
-              {/* Chat send button */}
-              <button
-                onClick={handleChatSend}
-                disabled={!inputText.trim() || isProcessing}
-                className="flex-shrink-0 p-2.5 rounded-xl transition-all"
-                style={{
-                  background:
-                    inputText.trim() && !isProcessing
-                      ? "rgba(192,132,252,0.18)"
-                      : "rgba(139,92,246,0.08)",
-                  border: `1px solid ${inputText.trim() && !isProcessing ? C.accent : C.border}`,
-                  color: inputText.trim() && !isProcessing ? C.accent : C.textMuted,
-                }}
-                title="チャット送信"
-              >
-                <Send size={16} />
-              </button>
-
-              {/* Start task button */}
-              <button
-                onClick={handleStartTask}
-                disabled={isProcessing}
-                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                style={{
-                  background: isProcessing ? "rgba(139,92,246,0.08)" : C.accent,
-                  color: isProcessing ? C.textMuted : "#1A0832",
-                  cursor: isProcessing ? "not-allowed" : "pointer",
-                }}
-                onMouseEnter={e => {
-                  if (!isProcessing) {
-                    e.currentTarget.style.opacity = "0.85";
-                    e.currentTarget.style.transform = "scale(1.02)";
-                  }
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.opacity = "1";
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
-              >
-                <Sparkles size={15} />
-                製作開始
-              </button>
-            </div>
-
-            {/* Hint text */}
-            <p className="text-[10px] px-1" style={{ color: C.textMuted }}>
-              💬 Enter でチャット送信 ·
-              ▶ 製作開始 でタスク作成（チャットなしでも直接入力可）
-            </p>
-          </div>
+          )}
         </div>
+
+        {/* ─── Right: 会話ログ panel ─── */}
+        {showChatLog && (
+          <div
+            className="w-80 flex-shrink-0 flex flex-col"
+            style={{ borderLeft: `1px solid ${C.border}`, background: "rgba(8,4,20,0.92)" }}
+          >
+            {/* Panel header */}
+            <div
+              className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+              style={{ borderBottom: `1px solid ${C.border}` }}
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare size={14} style={{ color: C.accent }} />
+                <span className="text-sm font-semibold" style={{ color: C.textMain }}>
+                  会話ログ
+                </span>
+              </div>
+              <button
+                onClick={() => setShowChatLog(false)}
+                className="w-6 h-6 flex items-center justify-center rounded transition-colors text-xs"
+                style={{ color: C.textMuted }}
+                onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
+                onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Timeline */}
+            <div
+              ref={logScrollRef}
+              className="flex-1 overflow-y-auto p-3 space-y-3 vtuber-scroll"
+            >
+              {timeline.map(item => {
+                if (item.kind === "msg") {
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex ${item.role === "user" ? "justify-end" : "justify-start"} items-end gap-1.5`}
+                    >
+                      {item.role === "assistant" && (
+                        <div
+                          className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
+                          style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
+                        >
+                          🎬
+                        </div>
+                      )}
+                      <div
+                        className="max-w-[82%] rounded-2xl px-3 py-2 text-xs leading-relaxed"
+                        style={
+                          item.role === "user"
+                            ? { background: C.userBubble, color: "#F5F3FF", borderBottomRightRadius: 4 }
+                            : { background: C.aiBubble, color: C.textMain, border: `1px solid ${C.border}`, borderBottomLeftRadius: 4 }
+                        }
+                      >
+                        <p className="whitespace-pre-wrap">{item.content}</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (item.kind === "file") {
+                  return (
+                    <div key={item.id} className="flex justify-center">
+                      <div
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px]"
+                        style={{ background: "rgba(139,92,246,0.12)", border: `1px solid ${C.border}`, color: C.textMuted }}
+                      >
+                        <Paperclip size={9} />
+                        {item.names.join("、")} を添付
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (item.kind === "video") {
+                  return (
+                    <div key={item.id} className="space-y-2">
+                      <VideoPreview src={item.url} />
+                      <a
+                        href={item.url}
+                        download={item.key.split("/").pop() ?? "output.mp4"}
+                        onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
+                        style={{ background: C.accent, color: "#1A0832" }}
+                        onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                        onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                      >
+                        <Download size={13} />
+                        ダウンロード
+                      </a>
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
+
+              {/* Task progress in log */}
+              {step === "submitted" && task && (
+                <TaskProgressCard task={task} pollingError={pollingError} />
+              )}
+
+              {/* Typing indicator in log */}
+              {chatLoading && (
+                <div className="flex items-end gap-1.5">
+                  <div
+                    className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
+                    style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
+                  >
+                    🎬
+                  </div>
+                  <div
+                    className="flex items-center gap-1 px-3 py-2.5 rounded-2xl rounded-bl-sm"
+                    style={{ background: C.aiBubble, border: `1px solid ${C.border}` }}
+                  >
+                    {[0, 160, 320].map(d => (
+                      <span
+                        key={d}
+                        className="w-1.5 h-1.5 rounded-full inline-block"
+                        style={{ background: C.accent, animation: `typingPulse 1.2s ease-in-out ${d}ms infinite` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="h-1" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Bottom input bar ── */}
+      <div
+        className="flex-shrink-0 px-4 py-3 space-y-2 relative z-10"
+        style={{ borderTop: `1px solid ${C.border}`, background: "rgba(8,4,18,0.96)" }}
+      >
+        {/* Model select */}
+        <div className="flex items-center gap-2">
+          <Clapperboard size={12} style={{ color: C.textMuted }} />
+          <select
+            value={videoModel}
+            onChange={e => {
+              const v = e.target.value as VideoModel;
+              if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
+              setVideoModel(v);
+            }}
+            disabled={isProcessing}
+            className="text-xs rounded-lg px-3 py-1.5 outline-none cursor-pointer"
+            style={{
+              background: "rgba(139,92,246,0.10)",
+              border: `1px solid ${C.border}`,
+              color: C.textSub,
+              appearance: "none",
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+            onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+          >
+            <option value="none">🎞 動画編集モード</option>
+            <option value="nova_reel">🤖 Amazon Nova Reel</option>
+          </select>
+        </div>
+
+        {/* Input row */}
+        <div className="flex items-end gap-2">
+          {/* File attach */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing}
+            className="flex-shrink-0 p-2.5 rounded-xl transition-all"
+            style={{
+              background: "rgba(139,92,246,0.10)",
+              border: `1px solid ${files.length > 0 ? C.accent : C.border}`,
+              color: files.length > 0 ? C.accent : C.textMuted,
+              opacity: isProcessing ? 0.5 : 1,
+            }}
+            title={files.length > 0 ? `${files.length} 件添付中` : "ファイルを添付"}
+          >
+            <Paperclip size={16} />
+          </button>
+
+          {/* Textarea */}
+          <textarea
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              isProcessing
+                ? "処理中です..."
+                : "ムービィに話しかける（Enter で送信 / Shift+Enter で改行）"
+            }
+            disabled={isProcessing}
+            rows={2}
+            className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={{
+              background: "rgba(139,92,246,0.07)",
+              border: `1px solid ${C.border}`,
+              color: C.textMain,
+              opacity: isProcessing ? 0.5 : 1,
+              transition: "border-color 0.15s",
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+            onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+          />
+
+          {/* Chat send */}
+          <button
+            onClick={handleChatSend}
+            disabled={!inputText.trim() || isProcessing}
+            className="flex-shrink-0 p-2.5 rounded-xl transition-all"
+            style={{
+              background: inputText.trim() && !isProcessing ? "rgba(192,132,252,0.18)" : "rgba(139,92,246,0.08)",
+              border: `1px solid ${inputText.trim() && !isProcessing ? C.accent : C.border}`,
+              color: inputText.trim() && !isProcessing ? C.accent : C.textMuted,
+            }}
+            title="チャット送信（会話ログに追加）"
+          >
+            <Send size={16} />
+          </button>
+
+          {/* Start task */}
+          <button
+            onClick={handleStartTask}
+            disabled={isProcessing}
+            className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{
+              background: isProcessing ? "rgba(139,92,246,0.08)" : C.accent,
+              color: isProcessing ? C.textMuted : "#1A0832",
+              cursor: isProcessing ? "not-allowed" : "pointer",
+            }}
+            onMouseEnter={e => {
+              if (!isProcessing) {
+                e.currentTarget.style.opacity = "0.85";
+                e.currentTarget.style.transform = "scale(1.02)";
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+          >
+            <Sparkles size={15} />
+            製作開始
+          </button>
+        </div>
+
+        <p className="text-[10px] px-1" style={{ color: C.textMuted }}>
+          💬 Enter でチャット送信 · ▶ 製作開始 でタスク作成（直接テキスト入力も可）
+        </p>
       </div>
 
       {/* Hidden file input */}
@@ -824,9 +854,7 @@ export default function App() {
         accept=".mp4,.mov,.avi,.webm,.jpg,.jpeg,.png,.gif,.webp"
         className="hidden"
         onChange={e => {
-          if (e.target.files) {
-            handleFilesSelected([...files, ...Array.from(e.target.files)]);
-          }
+          if (e.target.files) handleFilesSelected([...files, ...Array.from(e.target.files)]);
           e.target.value = "";
         }}
       />
