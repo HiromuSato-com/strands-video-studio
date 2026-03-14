@@ -841,9 +841,6 @@ export default function App() {
           </button>
         </div>
 
-        <p className="text-[10px] px-1" style={{ color: C.textMuted }}>
-          💬 Enter でチャット送信 · ▶ 製作開始 でタスク作成（直接テキスト入力も可）
-        </p>
       </div>
 
       {/* Hidden file input */}
