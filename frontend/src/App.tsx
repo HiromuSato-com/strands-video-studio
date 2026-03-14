@@ -1,692 +1,835 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Film, PenLine, Activity, Sparkles, Palette, Loader, Clapperboard, MessageSquare, Edit3, ArrowRight } from "lucide-react";
-import { UploadZone } from "./components/UploadZone";
-import { InstructionBox } from "./components/InstructionBox";
-import { TaskStatus } from "./components/TaskStatus";
-import { CompletionModal } from "./components/CompletionModal";
-import { ChatModal } from "./components/ChatModal";
-import { ChatPreviewModal } from "./components/ChatPreviewModal";
-import { Stepper } from "./components/Stepper";
-import { WelcomeModal, shouldShowWelcome } from "./components/WelcomeModal";
+import {
+  Paperclip, Film, ImageIcon, X, Send, Sparkles,
+  RotateCcw, Download, Clapperboard, Film as FilmIcon,
+} from "lucide-react";
+import { CharacterAvatar, type CharacterState } from "./components/CharacterAvatar";
+import { VideoPreview } from "./components/VideoPreview";
 import { useTaskPoller } from "./hooks/useTaskPoller";
 import {
-  getUploadUrl,
-  uploadFileToS3,
-  createTask,
-  getDownloadUrl,
-  sendChatMessage,
-  confirmChat,
-  initChat,
-  deleteFile,
+  getUploadUrl, uploadFileToS3, createTask, getDownloadUrl,
+  sendChatMessage, confirmChat, initChat, deleteFile,
 } from "./api/client";
-import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
+import type { Task } from "./types";
 
-type AppStep = "idle" | "uploading" | "submitted";
-type VideoModel = "nova_reel" | "none";
-type SetupPhase = "file" | "main";
-
-interface UploadProgress {
-  filename: string;
-  percent: number;
-}
-
-// 色の定数 — 素材感のある温かいパレット
+// ── Color tokens ──────────────────────────────────────────────────────────────
 const C = {
-  bg:          "#0E0C07",
-  card:        "#E2D4B8",
-  border:      "#9C8660",
-  accent:      "#7A4E22",
-  accentHover: "#6B4318",
-  accentDisabled: "#B0A080",
-  textMain:    "#1A1308",
-  textSub:     "#3D2C18",
-  textMuted:   "#6B5438",
-  badge:       "#C4A86E",
-  badgeText:   "#3A2510",
+  bg:         "#080412",
+  panel:      "rgba(14, 6, 30, 0.92)",
+  border:     "rgba(139, 92, 246, 0.28)",
+  borderHov:  "rgba(192, 132, 252, 0.60)",
+  accent:     "#C084FC",
+  accent2:    "#22D3EE",
+  accentPink: "#F9A8D4",
+  textMain:   "#EDE9FE",
+  textSub:    "#C4B5FD",
+  textMuted:  "#7C6AAE",
+  userBubble: "#5B21B6",
+  aiBubble:   "rgba(14, 6, 34, 0.95)",
+  green:      "#34D399",
+  red:        "#F87171",
+  yellow:     "#FCD34D",
 } as const;
 
-const STEP_LABELS = [
-  { num: "1", label: "ファイルを選択", icon: Film       },
-  { num: "2", label: "創作指示を入力", icon: PenLine    },
-  { num: "3", label: "処理状況",       icon: Activity   },
-  { num: "4", label: "結果プレビュー", icon: Sparkles   },
-] as const;
+// ── Types ─────────────────────────────────────────────────────────────────────
+type VideoModel = "nova_reel" | "none";
+type AppStep    = "idle" | "uploading" | "submitted";
 
+type TLItem =
+  | { id: string; kind: "msg";   role: "user" | "assistant"; content: string }
+  | { id: string; kind: "file";  names: string[] }
+  | { id: string; kind: "video"; url: string; key: string };
+
+const tid = () => uuidv4();
+
+const GREETING: TLItem = {
+  id: "init",
+  kind: "msg",
+  role: "assistant",
+  content:
+    "こんにちは！私はムービィだよ🎬\n動画編集・生成なんでも任せて！\nファイルをドロップするか、何を作りたいか話しかけてね✨",
+};
+
+const STATE_LABEL: Record<CharacterState, string> = {
+  idle:     "待機中 ✨",
+  thinking: "考え中 🤔",
+  working:  "制作中 ⚡",
+  complete: "完成！🎉",
+  error:    "エラー 😥",
+};
+
+// ── Inline task progress card ─────────────────────────────────────────────────
+function TaskProgressCard({
+  task,
+  pollingError,
+}: {
+  task: Task;
+  pollingError: string | null;
+}) {
+  const STATUS: Record<string, { label: string; color: string; pct: number }> = {
+    PENDING:   { label: "準備中...",    color: C.textMuted, pct: 10  },
+    RUNNING:   { label: "AI処理中 ⚡", color: C.accent,    pct: 60  },
+    COMPLETED: { label: "完成！🎉",     color: C.green,     pct: 100 },
+    FAILED:    { label: "エラー 😥",    color: C.red,       pct: 0   },
+  };
+  const info = STATUS[task.status] ?? STATUS.PENDING;
+  const SEG  = 20;
+  const filled = Math.round((info.pct / 100) * SEG);
+
+  return (
+    <div
+      className="rounded-xl p-3 space-y-2 text-xs"
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+    >
+      <div className="flex items-center justify-between">
+        <span style={{ color: info.color, fontWeight: 600 }}>{info.label}</span>
+        <span className="font-mono text-[10px]" style={{ color: C.textMuted }}>
+          TASK · {task.task_id.slice(0, 8).toUpperCase()}
+        </span>
+      </div>
+      {task.status !== "FAILED" && (
+        <div className="flex gap-0.5">
+          {Array.from({ length: SEG }, (_, i) => (
+            <div
+              key={i}
+              className="h-1.5 flex-1 rounded-sm transition-all duration-700"
+              style={{
+                background:
+                  i < filled
+                    ? info.color
+                    : "rgba(139,92,246,0.12)",
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {task.status === "FAILED" && task.error_message && (
+        <p style={{ color: C.red }}>{task.error_message}</p>
+      )}
+      {pollingError && (
+        <p className="text-[10px]" style={{ color: C.red }}>
+          接続エラー: {pollingError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Accepted file types ───────────────────────────────────────────────────────
+const ACCEPTED_RE = /\.(mp4|mov|avi|webm|jpg|jpeg|png|gif|webp)$/i;
+
+// ── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [setupPhase, setSetupPhase] = useState<SetupPhase>("file");
-  const [files, setFiles] = useState<File[]>([]);
-  // ファイル選択時の即時アップロード管理
-  // fileKey (`${name}-${size}`) → S3 key のマッピング
+  const [timeline,    setTimeline]    = useState<TLItem[]>([GREETING]);
+  const [inputText,   setInputText]   = useState("");
+  const [files,       setFiles]       = useState<File[]>([]);
   const [inputKeyMap, setInputKeyMap] = useState<Map<string, string>>(new Map());
-  // セッション全体で使う task_id（ファイル選択時のアップロードに使用）
   const [workingTaskId, setWorkingTaskId] = useState<string>(() => uuidv4());
-  const [instruction, setInstruction] = useState("");
-  const [videoModel, setVideoModel] = useState<VideoModel>("none");
-  const [step, setStep] = useState<AppStep>("idle");
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [downloadKey, setDownloadKey] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
-
-  const [showChatModal, setShowChatModal] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string>(() => uuidv4());
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [previewInstruction, setPreviewInstruction] = useState<string | null>(null);
+  const [chatLoading,  setChatLoading]  = useState(false);
+  const [videoModel,   setVideoModel]   = useState<VideoModel>("none");
+  const [step,         setStep]         = useState<AppStep>("idle");
+  const [taskId,       setTaskId]       = useState<string | null>(null);
+  const [downloadUrl,  setDownloadUrl]  = useState<string | null>(null);
+  const [isDragging,   setIsDragging]   = useState(false);
 
-  // ウェルカムモーダル（初回のみ）
-  const [showWelcome, setShowWelcome] = useState<boolean>(() => shouldShowWelcome());
-
-  // 指示入力エリアへのフォーカス ref（スキップリンク用）
-  const instructionRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollRef    = useRef<HTMLDivElement>(null);
 
   const { task, error: pollingError } = useTaskPoller(taskId);
 
-  // サウンド — タスクステータス変化を検知して再生
-  const prevStatusRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!task || task.status === prevStatusRef.current) return;
-    prevStatusRef.current = task.status;
-    if (task.status === "RUNNING")    playSound(Snd.SOUNDS.NOTIFICATION);
-    if (task.status === "COMPLETED")  playSound(Snd.SOUNDS.CELEBRATION);
-    if (task.status === "FAILED")     playSound(Snd.SOUNDS.CAUTION);
-  }, [task?.status]);
+  // ── Derived character state ───────────────────────────────────────────────
+  const characterState = useMemo<CharacterState>(() => {
+    if (chatLoading || step === "uploading") return "thinking";
+    if (!task) return step === "submitted" ? "thinking" : "idle";
+    switch (task.status) {
+      case "PENDING":   return "thinking";
+      case "RUNNING":   return "working";
+      case "COMPLETED": return "complete";
+      case "FAILED":    return "error";
+    }
+    return "idle";
+  }, [chatLoading, step, task]);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const addMsg = (role: "user" | "assistant", content: string) =>
+    setTimeline(prev => [...prev, { id: tid(), kind: "msg", role, content }]);
+
+  // ── Auto-scroll ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [timeline, chatLoading, task?.status]);
+
+  // ── Sound on status change ────────────────────────────────────────────────
+  const prevStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!task || task.status === prevStatus.current) return;
+    prevStatus.current = task.status;
+    if (task.status === "RUNNING")   playSound(Snd.SOUNDS.NOTIFICATION);
+    if (task.status === "COMPLETED") playSound(Snd.SOUNDS.CELEBRATION);
+    if (task.status === "FAILED")    playSound(Snd.SOUNDS.CAUTION);
+  }, [task?.status]); // eslint-disable-line
+
+  // ── Task completion: add video item + celebrate ───────────────────────────
   const handleCompleted = useCallback(
     async (completedTaskId: string) => {
       if (downloadUrl) return;
       try {
         const res = await getDownloadUrl(completedTaskId);
         setDownloadUrl(res.download_url);
-        setDownloadKey(res.output_key);
-        setShowModal(true);
+        setTimeline(prev => [
+          ...prev,
+          { id: tid(), kind: "video", url: res.download_url, key: res.output_key },
+        ]);
+        addMsg("assistant", "完成したよ🎉 動画を確認してみてね！\nダウンロードボタンから保存もできるよ✨");
       } catch (e) {
         console.error("Failed to get download URL", e);
       }
     },
-    [downloadUrl]
+    [downloadUrl], // eslint-disable-line
   );
 
-  if (task?.status === "COMPLETED" && !downloadUrl && taskId) {
-    handleCompleted(taskId);
-  }
-
-  const handleSubmit = async () => {
-    if (!instruction.trim()) {
-      playSound(Snd.SOUNDS.CAUTION);
-      setSubmitError("創作指示を入力してください");
-      return;
+  useEffect(() => {
+    if (task?.status === "COMPLETED" && !downloadUrl && taskId) {
+      handleCompleted(taskId);
     }
-    playSound(Snd.SOUNDS.BUTTON);
-    setSubmitError(null);
-    setStep("uploading");
-    setDownloadUrl(null);
-    setDownloadKey(null);
-    setShowModal(false);
+    if (task?.status === "FAILED") {
+      addMsg(
+        "assistant",
+        `ごめんね、エラーが起きちゃった😥${task.error_message ? `\n${task.error_message}` : ""}\nもう一度試してみて！`,
+      );
+    }
+  }, [task?.status]); // eslint-disable-line
 
-    try {
-      // ファイルは選択時に既にアップロード済み → inputKeyMap から S3 キーを取得
-      // アップロードが間に合っていないファイルは files のまま再アップロード（フォールバック）
-      const uploadedKeys = files.map(f => inputKeyMap.get(`${f.name}-${f.size}`)).filter(Boolean) as string[];
-      const notYetUploaded = files.filter(f => !inputKeyMap.has(`${f.name}-${f.size}`));
+  // ── File handling ─────────────────────────────────────────────────────────
+  const handleFilesSelected = useCallback(
+    async (incoming: File[]) => {
+      const valid = incoming.filter(f => ACCEPTED_RE.test(f.name));
 
-      let inputKeys = [...uploadedKeys];
-      if (notYetUploaded.length > 0) {
-        const fallbackKeys = await Promise.all(
-          notYetUploaded.map(async (file) => {
-            const { upload_url, key } = await getUploadUrl(workingTaskId, file.name);
-            await uploadFileToS3(upload_url, file);
-            return key;
-          })
-        );
-        inputKeys = [...inputKeys, ...fallbackKeys];
+      // Delete removed files from S3
+      const newFileKeys = new Set(valid.map(f => `${f.name}-${f.size}`));
+      for (const prev of files) {
+        const fk = `${prev.name}-${prev.size}`;
+        if (!newFileKeys.has(fk)) {
+          const s3k = inputKeyMap.get(fk);
+          if (s3k) deleteFile(s3k).catch(() => {});
+          setInputKeyMap(m => {
+            const n = new Map(m);
+            n.delete(fk);
+            return n;
+          });
+        }
       }
 
-      const { task_id } = await createTask(workingTaskId, instruction, inputKeys, videoModel);
-      setTaskId(task_id);
-      setStep("submitted");
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "送信中にエラーが発生しました");
-      setStep("idle");
-    }
-  };
+      setFiles(valid);
 
-  const handleChatSend = async (message: string) => {
-    // 送信直後にユーザーメッセージを即時表示（楽観的更新）
-    setChatMessages(prev => [...prev, { role: "user", content: message }]);
-    setChatLoading(true);
-    try {
-      const res = await sendChatMessage(chatSessionId, message);
-      setChatMessages(res.messages);
-    } catch (e) {
-      console.error(e);
-      // 失敗時は楽観的に追加したメッセージを取り消す
-      setChatMessages(prev => prev.slice(0, -1));
-    } finally {
-      setChatLoading(false);
-    }
-  };
+      // Upload newly added files
+      const prevFileKeys = new Set(files.map(f => `${f.name}-${f.size}`));
+      const newFiles = valid.filter(f => !prevFileKeys.has(`${f.name}-${f.size}`));
+      if (newFiles.length === 0) return;
 
-  const handleChatConfirm = async () => {
-    setChatLoading(true);
-    try {
-      const res = await confirmChat(chatSessionId);
-      setShowChatModal(false);
-      setPreviewInstruction(res.instruction);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setChatLoading(false);
-    }
-  };
+      setTimeline(prev => [
+        ...prev,
+        { id: tid(), kind: "file", names: newFiles.map(f => f.name) },
+      ]);
+      playSound(Snd.SOUNDS.TAP);
 
-  const handlePreviewConfirm = () => {
-    if (previewInstruction) {
-      setInstruction(previewInstruction);
-      playSound(Snd.SOUNDS.CELEBRATION);
-    }
-    setPreviewInstruction(null);
-  };
+      // Upload and collect keys
+      const newMap = new Map(inputKeyMap);
+      for (const file of newFiles) {
+        try {
+          const { upload_url, key } = await getUploadUrl(workingTaskId, file.name);
+          await uploadFileToS3(upload_url, file);
+          newMap.set(`${file.name}-${file.size}`, key);
+        } catch (e) {
+          console.error("Upload failed:", e);
+        }
+      }
+      setInputKeyMap(newMap);
 
-  const handleChatReset = () => {
-    setChatSessionId(uuidv4());
-    setChatMessages([]);
-    playSound(Snd.SOUNDS.TAP);
-  };
-
-  const openChatModal = async () => {
-    setShowChatModal(true);
-    if (chatMessages.length > 0) return;
-
-    if (files.length === 0) {
-      // ファイルなし → 即時表示（API不要）
-      setChatMessages([{
-        role: "assistant",
-        content: "こんにちは！動画編集・生成のご要望をお聞かせください。どのような映像を作りたいですか？",
-      }]);
-    } else {
-      // ファイルあり → AIがファイルを認識して挨拶を生成
-      // アップロード済みの S3 キーも渡すことで事前分析結果を活用する
+      // ムービィ greets the uploaded files
       setChatLoading(true);
       try {
-        const currentInputKeys = files
-          .map(f => inputKeyMap.get(`${f.name}-${f.size}`))
-          .filter(Boolean) as string[];
-        const res = await initChat(chatSessionId, files.map(f => f.name), currentInputKeys);
-        setChatMessages(res.messages);
+        const allNames = valid.map(f => f.name);
+        const allKeys  = valid.map(f => newMap.get(`${f.name}-${f.size}`)).filter(Boolean) as string[];
+        const res = await initChat(chatSessionId, allNames, allKeys);
+        const latestAi = res.messages.findLast(m => m.role === "assistant");
+        if (latestAi) addMsg("assistant", latestAi.content);
       } catch (e) {
-        console.error(e);
+        console.error("initChat failed:", e);
       } finally {
         setChatLoading(false);
       }
+    },
+    [files, inputKeyMap, workingTaskId, chatSessionId], // eslint-disable-line
+  );
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const incoming = Array.from(e.dataTransfer.files);
+    handleFilesSelected([...files, ...incoming]);
+  };
+
+  const removeFile = (index: number) => {
+    const next = files.filter((_, i) => i !== index);
+    handleFilesSelected(next);
+    playSound(Snd.SOUNDS.TAP);
+  };
+
+  // ── Chat send ─────────────────────────────────────────────────────────────
+  const handleChatSend = async () => {
+    const text = inputText.trim();
+    if (!text || chatLoading || step !== "idle") return;
+    addMsg("user", text);
+    setInputText("");
+    setChatLoading(true);
+    try {
+      const res  = await sendChatMessage(chatSessionId, text);
+      const last = res.messages.findLast(m => m.role === "assistant");
+      if (last) addMsg("assistant", last.content);
+    } catch {
+      addMsg("assistant", "ごめんね、うまく聞き取れなかったよ😥 もう一度試してね！");
+    } finally {
+      setChatLoading(false);
     }
   };
 
-  const handleFilesSelected = async (selectedFiles: File[]) => {
-    const prevFiles = files; // クロージャ時点の値（= 更新前の files）
+  // ── Start task ────────────────────────────────────────────────────────────
+  const handleStartTask = async () => {
+    if (step !== "idle" || chatLoading) return;
 
-    // 削除されたファイルを S3 から消す
-    const newFileKeys = new Set(selectedFiles.map(f => `${f.name}-${f.size}`));
-    for (const prevFile of prevFiles) {
-      const fileKey = `${prevFile.name}-${prevFile.size}`;
-      if (!newFileKeys.has(fileKey)) {
-        const s3Key = inputKeyMap.get(fileKey);
-        if (s3Key) {
-          deleteFile(s3Key).catch(err => console.error("Delete failed:", err));
-          setInputKeyMap(prev => { const next = new Map(prev); next.delete(fileKey); return next; });
-        }
+    let instruction = inputText.trim();
+
+    if (!instruction) {
+      // Confirm instruction from chat history
+      const hasUserMsg = timeline.some(i => i.kind === "msg" && i.role === "user");
+      if (!hasUserMsg) {
+        addMsg(
+          "assistant",
+          "まず何を作りたいか教えてね！💬\nチャットで相談するか、直接テキストを入力してから「製作開始」を押してね！",
+        );
+        return;
       }
-    }
-
-    setFiles(selectedFiles);
-
-    // 新しく追加されたファイルを即時アップロード
-    const prevFileKeys = new Set(prevFiles.map(f => `${f.name}-${f.size}`));
-    const newlyAdded = selectedFiles.filter(f => !prevFileKeys.has(`${f.name}-${f.size}`));
-    for (const file of newlyAdded) {
-      const fileKey = `${file.name}-${file.size}`;
+      setChatLoading(true);
       try {
-        const { upload_url, key } = await getUploadUrl(workingTaskId, file.name);
-        await uploadFileToS3(upload_url, file);
-        setInputKeyMap(prev => new Map(prev).set(fileKey, key));
-      } catch (err) {
-        console.error("Immediate upload failed:", err);
+        const res = await confirmChat(chatSessionId);
+        instruction = res.instruction;
+      } catch {
+        addMsg("assistant", "指示の確定に失敗しちゃった😥 もう一度試してね！");
+        setChatLoading(false);
+        return;
       }
+      setChatLoading(false);
+    } else {
+      addMsg("user", instruction);
+      setInputText("");
     }
 
-    if (selectedFiles.length > 0) {
-      setSetupPhase("main");
-      setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
+    const preview = instruction.length > 60
+      ? instruction.slice(0, 60) + "…"
+      : instruction;
+    addMsg("assistant", `了解！「${preview}」で製作開始するね⚡\nしばらく待っててね🎬`);
+    playSound(Snd.SOUNDS.BUTTON);
+    setStep("uploading");
+
+    try {
+      const uploadedKeys = files
+        .map(f => inputKeyMap.get(`${f.name}-${f.size}`))
+        .filter(Boolean) as string[];
+      const { task_id } = await createTask(workingTaskId, instruction, uploadedKeys, videoModel);
+      setTaskId(task_id);
+      setStep("submitted");
+    } catch (e) {
+      setStep("idle");
+      addMsg("assistant", "タスクの作成に失敗しちゃった😥 もう一度試してね！");
     }
   };
 
+  // ── Reset ─────────────────────────────────────────────────────────────────
   const handleReset = () => {
     playSound(Snd.SOUNDS.TAP);
-    setSetupPhase("file");
+    setTimeline([GREETING]);
+    setInputText("");
     setFiles([]);
     setInputKeyMap(new Map());
     setWorkingTaskId(uuidv4());
-    setInstruction("");
+    setChatSessionId(uuidv4());
     setVideoModel("none");
     setStep("idle");
     setTaskId(null);
-    setUploadProgress([]);
-    setSubmitError(null);
     setDownloadUrl(null);
-    setDownloadKey(null);
-    setShowModal(false);
-    setChatSessionId(uuidv4());
-    setChatMessages([]);
-    setShowChatModal(false);
     setChatLoading(false);
   };
 
-  const StepBadge = ({ index }: { index: number }) => {
-    const s = STEP_LABELS[index];
-    const Icon = s.icon;
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full self-start"
-        style={{ background: C.badge, color: C.badgeText, border: `1px solid ${C.border}` }}
-      >
-        <Icon size={12} />
-        {s.num}. {s.label}
-      </span>
-    );
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleChatSend();
+    }
   };
 
-  const isSubmitDisabled = !instruction.trim();
+  const isProcessing = step !== "idle" || chatLoading;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen md:h-screen flex flex-col md:overflow-y-hidden overflow-x-hidden luxury-bg">
-
-      {/* ウェルカムモーダル（初回のみ） */}
-      {showWelcome && (
-        <WelcomeModal onClose={() => setShowWelcome(false)} />
-      )}
-
-
-      {/* 指示プレビューモーダル */}
-      {previewInstruction !== null && (
-        <ChatPreviewModal
-          instruction={previewInstruction}
-          onConfirm={handlePreviewConfirm}
-          onCancel={() => setPreviewInstruction(null)}
-        />
-      )}
-
-      {/* 完成モーダル */}
-      {showModal && downloadUrl && downloadKey && (
-        <CompletionModal
-          downloadUrl={downloadUrl}
-          outputKey={downloadKey}
-          onClose={() => setShowModal(false)}
-          onReset={handleReset}
-        />
-      )}
-
-      {/* チャットモーダル */}
-      {showChatModal && (
-        <ChatModal
-          messages={chatMessages}
-          onSend={handleChatSend}
-          onConfirm={handleChatConfirm}
-          onReset={handleChatReset}
-          isLoading={chatLoading}
-          onClose={() => setShowChatModal(false)}
-        />
-      )}
-
-      {/* Header — 1行 */}
-      <div
-        className="flex items-center justify-between px-6 py-1.5 flex-shrink-0"
-        style={{ borderBottom: `1px solid #2A2318` }}
-      >
-        <h1 className="font-klee text-lg font-semibold" style={{ color: C.card, letterSpacing: "0.06em" }}>
-          AI 創作スタジオ
-        </h1>
-        <p className="text-[10px] hidden sm:flex items-center gap-1.5" style={{ color: "#8B7A5E" }}>
-          <Palette size={10} />
-          Strands Agents · Claude Sonnet · Bedrock · ECS Fargate
-        </p>
-      </div>
-
-      {/* Stepper — ヘッダーとカードの間 */}
-      {step === "idle" && (
-        <div className="flex-shrink-0 pt-2">
-          <Stepper
-            hasFiles={files.length > 0}
-            hasInstruction={instruction.trim().length > 0}
-            hasModel={videoModel !== "none"}
-            isSubmitted={false}
-          />
+    <div
+      className="vtuber-bg h-screen flex flex-col overflow-hidden"
+      onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false); }}
+      onDrop={handleDrop}
+    >
+      {/* ── Drag overlay ── */}
+      {isDragging && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(124,58,237,0.25)", border: "3px dashed rgba(192,132,252,0.8)" }}
+        >
+          <div className="text-center" style={{ color: C.accent }}>
+            <FilmIcon size={48} className="mx-auto mb-3 opacity-80" />
+            <p className="text-xl font-bold">ドロップしてね！</p>
+          </div>
         </div>
       )}
 
-      {/* Main container */}
-      <div className="max-w-7xl w-full mx-auto md:flex-1 md:overflow-hidden px-4 pb-3 pt-1">
-        {/* Card — リネン */}
+      {/* ── Header ── */}
+      <header
+        className="flex-shrink-0 flex items-center justify-between px-6 py-2 relative z-10"
+        style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(8,4,18,0.90)" }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-bold" style={{ color: C.accent }}>
+            🎬 ムービィ AI Studio
+          </span>
+          <span className="text-[10px] hidden sm:block" style={{ color: C.textMuted }}>
+            Strands Agents · Claude Sonnet · Bedrock
+          </span>
+        </div>
+        {(step === "submitted" || !!downloadUrl) && (
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+            style={{ border: `1px solid ${C.border}`, color: C.textSub }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = C.accent;
+              e.currentTarget.style.color = C.accent;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = C.border;
+              e.currentTarget.style.color = C.textSub;
+            }}
+          >
+            <RotateCcw size={12} />
+            新しい創作
+          </button>
+        )}
+      </header>
+
+      {/* ── Main body ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden relative z-10">
+
+        {/* ─── Left: Character panel ─── */}
         <div
-          className="p-3 md:h-full flex flex-col rounded-xl shadow-2xl"
-          style={{
-            background: C.card,
-            border: `1px solid ${C.border}`,
-            boxShadow: `0 24px 60px rgba(6,4,2,0.7)`,
-          }}
+          className="w-52 flex-shrink-0 flex flex-col items-center gap-4 py-6 px-3 overflow-y-auto vtuber-scroll"
+          style={{ borderRight: `1px solid ${C.border}`, background: "rgba(8,4,20,0.60)" }}
         >
+          {/* Avatar */}
+          <CharacterAvatar state={characterState} size={160} />
 
-          {step === "idle" ? (
-            <div className="flex flex-col gap-4 md:grid md:grid-cols-[1.4fr_2fr_1.3fr] md:gap-3 md:flex-1 md:overflow-hidden md:min-h-0">
+          {/* Name + state */}
+          <div className="text-center">
+            <p className="font-bold text-sm" style={{ color: C.textMain }}>ムービィ</p>
+            <p
+              className="text-[11px] mt-0.5"
+              style={{
+                color: characterState === "working"
+                  ? C.yellow
+                  : characterState === "complete"
+                    ? C.green
+                    : characterState === "error"
+                      ? C.red
+                      : C.textMuted,
+              }}
+            >
+              {STATE_LABEL[characterState]}
+            </p>
+          </div>
 
-              {/* 左カラム — ファイル選択 */}
-              <div className="flex flex-col gap-3 md:min-h-0 min-w-0">
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <StepBadge index={0} />
-                  <span
-                    className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: C.badge, color: C.textMuted, border: `1px solid ${C.border}` }}
-                  >
-                    任意
-                  </span>
-                </div>
-                <UploadZone onFilesSelected={handleFilesSelected} disabled={false} className="md:flex-1 md:min-h-0" />
-                {files.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSetupPhase("main");
-                      setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
-                    }}
-                    className="inline-flex items-center gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium flex-shrink-0 transition-all"
-                    style={{
-                      color: C.accent,
-                      background: "rgba(122,78,34,0.10)",
-                      border: `1px solid rgba(122,78,34,0.40)`,
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = "rgba(122,78,34,0.18)";
-                      e.currentTarget.style.borderColor = C.accent;
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = "rgba(122,78,34,0.10)";
-                      e.currentTarget.style.borderColor = "rgba(122,78,34,0.40)";
-                    }}
-                  >
-                    スキップ（テキストから生成）
-                    <ArrowRight size={14} />
-                  </button>
-                )}
-              </div>
+          {/* Divider */}
+          <div className="w-full h-px" style={{ background: C.border }} />
 
-              {/* 中カラム — 指示入力 */}
-              <div
-                ref={instructionRef}
-                className="flex flex-col gap-3 md:min-h-0 min-w-0 md:px-4 border-t border-[#9C8660] md:border-t-0 md:border-l md:border-r md:border-[#9C8660] pt-4 md:pt-0 transition-opacity duration-300"
+          {/* File section */}
+          <div className="w-full space-y-1.5">
+            <p className="text-[10px] font-medium px-1" style={{ color: C.textMuted }}>
+              添付ファイル{files.length > 0 ? ` (${files.length}件)` : ""}
+            </p>
+
+            {files.length === 0 ? (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full flex flex-col items-center justify-center gap-2 p-4 rounded-xl text-xs transition-all"
                 style={{
-                  opacity: setupPhase === "file" ? 0.35 : 1,
-                  pointerEvents: setupPhase === "file" ? "none" : "auto",
-                  userSelect: setupPhase === "file" ? "none" : "auto",
+                  border: `1.5px dashed ${C.border}`,
+                  color: C.textMuted,
+                  background: "rgba(139,92,246,0.05)",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = C.accent;
+                  e.currentTarget.style.color = C.accent;
+                  e.currentTarget.style.background = "rgba(192,132,252,0.08)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = C.border;
+                  e.currentTarget.style.color = C.textMuted;
+                  e.currentTarget.style.background = "rgba(139,92,246,0.05)";
                 }}
               >
-                {/* モード切替セグメント */}
-                <div
-                  className="flex rounded-lg overflow-hidden flex-shrink-0"
-                  style={{ border: `1px solid ${C.border}` }}
-                >
+                <Paperclip size={20} />
+                <span>ドロップ or クリック</span>
+                <span className="text-[9px]" style={{ color: C.textMuted }}>
+                  動画・画像を追加
+                </span>
+              </button>
+            ) : (
+              <ul className="space-y-1">
+                {files.map((f, i) => (
+                  <li
+                    key={`${f.name}-${f.size}`}
+                    className="flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg"
+                    style={{ background: "rgba(139,92,246,0.10)", border: `1px solid ${C.border}` }}
+                  >
+                    <span style={{ color: C.textMuted, flexShrink: 0 }}>
+                      {f.type.startsWith("video") ? <Film size={10} /> : <ImageIcon size={10} />}
+                    </span>
+                    <span className="truncate flex-1" style={{ color: C.textSub }}>{f.name}</span>
+                    <button
+                      onClick={() => removeFile(i)}
+                      className="flex-shrink-0 transition-colors"
+                      style={{ color: C.textMuted }}
+                      onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                      onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                    >
+                      <X size={10} />
+                    </button>
+                  </li>
+                ))}
+                <li>
                   <button
-                    type="button"
-                    onClick={() => setShowChatModal(false)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
-                    style={{
-                      background: !showChatModal ? C.accent : "transparent",
-                      color: !showChatModal ? C.card : C.textSub,
-                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full text-center text-[10px] py-1 rounded transition-colors"
+                    style={{ color: C.textMuted }}
+                    onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
+                    onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
                   >
-                    <Edit3 size={11} />
-                    直接入力
+                    + ファイルを追加
                   </button>
-                  <button
-                    type="button"
-                    onClick={openChatModal}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors"
-                    style={{
-                      background: showChatModal ? C.accent : "transparent",
-                      color: showChatModal ? C.card : C.textSub,
-                      borderLeft: `1px solid ${C.border}`,
-                    }}
-                  >
-                    <MessageSquare size={11} />
-                    <span className="sm:hidden">AI相談</span>
-                    <span className="hidden sm:inline">AIと相談しながら作成</span>
-                  </button>
-                </div>
+                </li>
+              </ul>
+            )}
+          </div>
+        </div>
 
-                <div className="flex-1 min-h-0 flex flex-col">
-                  <InstructionBox
-                    value={instruction}
-                    onChange={setInstruction}
-                    disabled={false}
-                    hasFiles={files.length > 0}
-                  />
-                </div>
-              </div>
+        {/* ─── Right: Chat area ─── */}
+        <div className="flex flex-1 flex-col min-w-0">
 
-              {/* 右カラム — モデル選択 + 送信 */}
-              <div
-                className="flex flex-col gap-3 md:min-h-0 min-w-0 border-t border-[#9C8660] md:border-t-0 pt-4 md:pt-0 transition-opacity duration-300"
-                style={{
-                  opacity: setupPhase === "file" ? 0.35 : 1,
-                  pointerEvents: setupPhase === "file" ? "none" : "auto",
-                  userSelect: setupPhase === "file" ? "none" : "auto",
-                }}
-              >
-                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                  <label className="text-xs flex items-center gap-1.5" style={{ color: C.textSub }}>
-                    <Clapperboard size={12} />
-                    モード / 動画生成モデル
-                  </label>
-                  <select
-                    value={videoModel}
-                    onChange={e => {
-                      const v = e.target.value as VideoModel;
-                      if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
-                      setVideoModel(v);
-                    }}
-                    className="w-full rounded-lg px-3 py-2 text-xs outline-none cursor-pointer transition-colors"
-                    style={{
-                      background: C.card,
-                      border: `1px solid ${C.border}`,
-                      color: C.textMain,
-                      appearance: "none",
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2020/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A7D6A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                      backgroundRepeat: "no-repeat",
-                      backgroundPosition: "right 10px center",
-                      paddingRight: "28px",
-                    }}
-                    onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-                    onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-                  >
-                    <option value="none">動画編集モード</option>
-                    <option value="nova_reel">Amazon Nova Reel</option>
-                  </select>
-
-                  {/* モデル情報パネル */}
+          {/* Chat timeline */}
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto p-4 space-y-3 vtuber-scroll"
+          >
+            {timeline.map(item => {
+              /* ── Chat message ── */
+              if (item.kind === "msg") {
+                return (
                   <div
-                    className="rounded-lg p-2.5 space-y-1.5 flex-shrink-0"
-                    style={{ background: C.badge, border: `1px solid ${C.border}` }}
+                    key={item.id}
+                    className={`flex ${item.role === "user" ? "justify-end" : "justify-start"} items-end gap-2`}
                   >
-                    {videoModel === "none" && (
-                      <>
-                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
-                          ✂ 動画編集モード
-                        </p>
-                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
-                          <li>✦ アップロードした動画をトリミング・結合・テロップ追加・BGMミックスで編集します</li>
-                          <li>✦ AI による動画生成は行いません（高速・低コスト）</li>
-                          <li>✦ 日本語テロップや字幕の追加に最適</li>
-                        </ul>
-                      </>
+                    {item.role === "assistant" && (
+                      <div
+                        className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
+                        style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
+                      >
+                        🎬
+                      </div>
                     )}
-                    {videoModel === "nova_reel" && (
-                      <>
-                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
-                          🎬 Amazon Nova Reel の特徴
-                        </p>
-                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
-                          <li>✦ カメラアングル・動きのコントロールが優れており、テンポ感のある映像演出が可能</li>
-                          <li>✦ ロゴやビジュアルアイデンティティをシーン全体で一貫して保持し、ブランド動画制作に強い</li>
-                          <li>✦ 製品中心のナラティブや企業ブランドのストーリーテリングに最適</li>
-                          <li>✦ 短尺シーンを低コストで量産でき、ストーリーボード検討の反復に向く</li>
-                        </ul>
-                        <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
-                          最大6s（〜120s）　1280×720固定　生成: 約90秒〜
-                        </p>
-                      </>
-                    )}
+                    <div
+                      className="max-w-[72%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
+                      style={
+                        item.role === "user"
+                          ? {
+                              background: C.userBubble,
+                              color: "#F5F3FF",
+                              borderBottomRightRadius: 4,
+                            }
+                          : {
+                              background: C.aiBubble,
+                              color: C.textMain,
+                              border: `1px solid ${C.border}`,
+                              borderBottomLeftRadius: 4,
+                            }
+                      }
+                    >
+                      <p className="whitespace-pre-wrap">{item.content}</p>
+                    </div>
                   </div>
-                </div>
+                );
+              }
 
-                {submitError && (
-                  <p className="text-xs border px-3 py-2 rounded-lg flex-shrink-0" style={{ color: "#9B2C2C", background: "#FFF5F5", borderColor: "#FEB2B2" }}>
-                    {submitError}
-                  </p>
-                )}
+              /* ── File notification ── */
+              if (item.kind === "file") {
+                return (
+                  <div key={item.id} className="flex justify-center">
+                    <div
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px]"
+                      style={{
+                        background: "rgba(139,92,246,0.14)",
+                        border: `1px solid ${C.border}`,
+                        color: C.textMuted,
+                      }}
+                    >
+                      <Paperclip size={11} />
+                      {item.names.join("、")} を添付したよ
+                    </div>
+                  </div>
+                );
+              }
 
-                <button
-                  onClick={handleSubmit}
-                  disabled={isSubmitDisabled}
-                  title={isSubmitDisabled ? "創作指示を入力してください" : undefined}
-                  className="mt-4 md:mt-auto w-full font-medium py-3 rounded-lg flex items-center justify-center gap-2 text-sm flex-shrink-0"
-                  style={{
-                    background: isSubmitDisabled ? C.accentDisabled : C.accent,
-                    color: C.card,
-                    cursor: isSubmitDisabled ? "not-allowed" : "pointer",
-                    transition: "background 0.15s, transform 0.15s",
-                  }}
-                  onMouseEnter={e => {
-                    if (!isSubmitDisabled) {
-                      e.currentTarget.style.background = C.accentHover;
-                      e.currentTarget.style.transform = "scale(1.02)";
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = isSubmitDisabled ? C.accentDisabled : C.accent;
-                    e.currentTarget.style.transform = "scale(1)";
-                  }}
-                >
-                  <Sparkles size={16} />
-                  創作を開始
-                </button>
+              /* ── Completed video ── */
+              if (item.kind === "video") {
+                return (
+                  <div key={item.id} className="space-y-2 max-w-xl">
+                    <VideoPreview src={item.url} />
+                    <a
+                      href={item.url}
+                      download={item.key.split("/").pop() ?? "output.mp4"}
+                      onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
+                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                      style={{ background: C.accent, color: "#1A0832" }}
+                      onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                      onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                    >
+                      <Download size={15} />
+                      ダウンロード
+                    </a>
+                  </div>
+                );
+              }
+
+              return null;
+            })}
+
+            {/* Task progress (inline, follows messages) */}
+            {step === "submitted" && task && (
+              <TaskProgressCard task={task} pollingError={pollingError} />
+            )}
+            {step === "uploading" && (
+              <div className="flex items-center gap-2 text-xs" style={{ color: C.textMuted }}>
+                <div
+                  className="w-3 h-3 border-2 rounded-full animate-spin"
+                  style={{ borderColor: `${C.accent} transparent` }}
+                />
+                アップロード中...
               </div>
+            )}
+            {step === "submitted" && !task && (
+              <div className="flex items-center gap-2 text-xs" style={{ color: C.textMuted }}>
+                <div
+                  className="w-3 h-3 border-2 rounded-full animate-spin"
+                  style={{ borderColor: `${C.accent} transparent` }}
+                />
+                エージェント起動中...
+              </div>
+            )}
+
+            {/* Typing indicator */}
+            {chatLoading && (
+              <div className="flex items-end gap-2">
+                <div
+                  className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
+                  style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
+                >
+                  🎬
+                </div>
+                <div
+                  className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-bl-sm"
+                  style={{ background: C.aiBubble, border: `1px solid ${C.border}` }}
+                >
+                  {[0, 160, 320].map(d => (
+                    <span
+                      key={d}
+                      className="w-2 h-2 rounded-full inline-block"
+                      style={{
+                        background: C.accent,
+                        animation: `typingPulse 1.2s ease-in-out ${d}ms infinite`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Scroll anchor */}
+            <div className="h-1" />
+          </div>
+
+          {/* ── Bottom input bar ── */}
+          <div
+            className="flex-shrink-0 px-3 py-3 space-y-2"
+            style={{ borderTop: `1px solid ${C.border}`, background: "rgba(8,4,18,0.96)" }}
+          >
+            {/* Model select row */}
+            <div className="flex items-center gap-2">
+              <Clapperboard size={12} style={{ color: C.textMuted }} />
+              <select
+                value={videoModel}
+                onChange={e => {
+                  const v = e.target.value as VideoModel;
+                  if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
+                  setVideoModel(v);
+                }}
+                disabled={isProcessing}
+                className="text-xs rounded-lg px-3 py-1.5 outline-none cursor-pointer"
+                style={{
+                  background: "rgba(139,92,246,0.10)",
+                  border: `1px solid ${C.border}`,
+                  color: C.textSub,
+                  appearance: "none",
+                }}
+                onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+                onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+              >
+                <option value="none">🎞 動画編集モード</option>
+                <option value="nova_reel">🤖 Amazon Nova Reel</option>
+              </select>
+
+              {isProcessing && step !== "idle" && (
+                <span className="text-[10px] ml-auto" style={{ color: C.textMuted }}>
+                  {step === "uploading"
+                    ? "アップロード中..."
+                    : task
+                      ? `${task.status}`
+                      : "エージェント起動中..."}
+                </span>
+              )}
             </div>
 
-          ) : (
-            <>
-              {/* 送信内容サマリー */}
-              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.border}` }}>
-                {/* Cartridge stripe */}
-                <div style={{ height: "3px", background: `linear-gradient(90deg, ${C.accent} 0%, #D4A96A 55%, ${C.accent} 100%)` }} />
-                <div className="p-4" style={{ background: "#D4C4A0" }}>
-                <p className="text-[10px] font-mono tracking-[0.15em] uppercase mb-2" style={{ color: C.textMuted }}>
-                  送信した創作内容
-                </p>
-                <p className="text-sm leading-snug" style={{ color: C.textMain }}>
-                  {instruction.length > 100 ? instruction.slice(0, 100) + "…" : instruction}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                  {files.map((f) => (
-                    <span
-                      key={f.name}
-                      className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
-                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.textSub }}
-                    >
-                      <Film size={9} />
-                      {f.name}
-                    </span>
-                  ))}
-                  {videoModel !== "none" && (
-                    <span className="text-[10px]" style={{ color: C.textMuted }}>
-                      Amazon Nova Reel
-                    </span>
-                  )}
-                </div>
-                </div>
-              </div>
+            {/* Input row */}
+            <div className="flex items-end gap-2">
+              {/* File attach */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="flex-shrink-0 p-2.5 rounded-xl transition-all"
+                style={{
+                  background: "rgba(139,92,246,0.10)",
+                  border: `1px solid ${C.border}`,
+                  color: C.textMuted,
+                  opacity: isProcessing ? 0.5 : 1,
+                }}
+                onMouseEnter={e => {
+                  if (!isProcessing) e.currentTarget.style.color = C.accent;
+                }}
+                onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                title="ファイルを添付"
+              >
+                <Paperclip size={16} />
+              </button>
 
-              {step === "uploading" && uploadProgress.length > 0 && (
-                <div className="space-y-2 mt-4">
-                  {uploadProgress.map((p) => (
-                    <div key={p.filename}>
-                      <div className="flex justify-between text-xs mb-1 font-mono" style={{ color: C.textSub }}>
-                        <span className="truncate">{p.filename}</span>
-                        <span>{p.percent}%</span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-sm" style={{ background: "rgba(28,24,16,0.1)" }}>
-                        <div
-                          className="h-1.5 rounded-sm transition-all duration-300"
-                          style={{ width: `${p.percent}%`, background: C.accent }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Textarea */}
+              <textarea
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isProcessing
+                    ? "処理中です..."
+                    : "ムービィに話しかける（Enter で送信 / Shift+Enter で改行）"
+                }
+                disabled={isProcessing}
+                rows={2}
+                className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{
+                  background: "rgba(139,92,246,0.07)",
+                  border: `1px solid ${C.border}`,
+                  color: C.textMain,
+                  opacity: isProcessing ? 0.5 : 1,
+                  transition: "border-color 0.15s",
+                }}
+                onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
+                onBlur={e => (e.currentTarget.style.borderColor = C.border)}
+              />
 
-              {step === "uploading" && uploadProgress.length === 0 && (
-                <div className="flex items-center gap-2 py-1 mt-4 font-mono text-xs tracking-widest uppercase" style={{ color: C.textSub }}>
-                  <Loader size={13} className="animate-spin" />
-                  UPLOADING...
-                </div>
-              )}
+              {/* Chat send button */}
+              <button
+                onClick={handleChatSend}
+                disabled={!inputText.trim() || isProcessing}
+                className="flex-shrink-0 p-2.5 rounded-xl transition-all"
+                style={{
+                  background:
+                    inputText.trim() && !isProcessing
+                      ? "rgba(192,132,252,0.18)"
+                      : "rgba(139,92,246,0.08)",
+                  border: `1px solid ${inputText.trim() && !isProcessing ? C.accent : C.border}`,
+                  color: inputText.trim() && !isProcessing ? C.accent : C.textMuted,
+                }}
+                title="チャット送信"
+              >
+                <Send size={16} />
+              </button>
 
-              {step === "submitted" && !task && (
-                <div className="flex items-center gap-2 py-1 mt-4 font-mono text-xs tracking-widest uppercase" style={{ color: C.textSub }}>
-                  <Loader size={13} className="animate-spin" />
-                  INITIALIZING...
-                </div>
-              )}
+              {/* Start task button */}
+              <button
+                onClick={handleStartTask}
+                disabled={isProcessing}
+                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                style={{
+                  background: isProcessing ? "rgba(139,92,246,0.08)" : C.accent,
+                  color: isProcessing ? C.textMuted : "#1A0832",
+                  cursor: isProcessing ? "not-allowed" : "pointer",
+                }}
+                onMouseEnter={e => {
+                  if (!isProcessing) {
+                    e.currentTarget.style.opacity = "0.85";
+                    e.currentTarget.style.transform = "scale(1.02)";
+                  }
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.opacity = "1";
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+              >
+                <Sparkles size={15} />
+                製作開始
+              </button>
+            </div>
 
-              {task && (
-                <div className="space-y-3 mt-4">
-                  <StepBadge index={2} />
-                  <TaskStatus task={task} pollingError={pollingError} />
-
-
-                  {task.status === "COMPLETED" && downloadUrl && !showModal && (
-                    <button
-                      onClick={() => setShowModal(true)}
-                      className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-lg text-xs font-mono font-medium tracking-wider transition-all"
-                      style={{ border: `1px solid ${C.accent}`, color: C.accent, background: "transparent" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(139,94,52,0.08)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <Sparkles size={12} />
-                      ▶ プレビューを再表示
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {(task?.status === "COMPLETED" || task?.status === "FAILED") && (
-                <button
-                  onClick={handleReset}
-                  className="w-full mt-3 inline-flex items-center justify-center gap-2 py-3 rounded-lg text-xs font-mono font-medium tracking-wider transition-all"
-                  style={{ border: `1px solid ${C.border}`, color: C.textSub, background: "transparent" }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSub; }}
-                >
-                  ↩ リセット
-                </button>
-              )}
-            </>
-          )}
+            {/* Hint text */}
+            <p className="text-[10px] px-1" style={{ color: C.textMuted }}>
+              💬 Enter でチャット送信 ·
+              ▶ 製作開始 でタスク作成（チャットなしでも直接入力可）
+            </p>
+          </div>
         </div>
       </div>
 
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".mp4,.mov,.avi,.webm,.jpg,.jpeg,.png,.gif,.webp"
+        className="hidden"
+        onChange={e => {
+          if (e.target.files) {
+            handleFilesSelected([...files, ...Array.from(e.target.files)]);
+          }
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
