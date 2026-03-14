@@ -51,6 +51,12 @@ data "archive_file" "delete_file" {
   output_path = "${path.module}/.lambda_zips/delete_file.zip"
 }
 
+data "archive_file" "approve_task" {
+  type        = "zip"
+  source_file = "${local.lambda_src_dir}/approve_task.py"
+  output_path = "${path.module}/.lambda_zips/approve_task.zip"
+}
+
 # ─── Lambda functions ─────────────────────────────────────────────────────────
 resource "aws_lambda_function" "upload_url" {
   function_name    = "${var.project_name}-upload-url"
@@ -239,6 +245,31 @@ resource "aws_lambda_permission" "delete_file" {
   statement_id  = "AllowAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.delete_file.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+# ─── Approve Task Lambda ───────────────────────────────────────────────────────
+resource "aws_lambda_function" "approve_task" {
+  function_name    = "${var.project_name}-approve-task"
+  role             = aws_iam_role.lambda.arn
+  handler          = "approve_task.handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.approve_task.output_path
+  source_code_hash = data.archive_file.approve_task.output_base64sha256
+  timeout          = 15
+
+  environment {
+    variables = local.lambda_common_env
+  }
+
+  tags = { Project = var.project_name }
+}
+
+resource "aws_lambda_permission" "approve_task" {
+  statement_id  = "AllowAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.approve_task.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
