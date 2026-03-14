@@ -22,6 +22,7 @@ ECS_SUBNET_IDS = os.environ["ECS_SUBNET_IDS"].split(",")
 ECS_SECURITY_GROUP_ID = os.environ["ECS_SECURITY_GROUP_ID"]
 CONTAINER_NAME = os.environ.get("CONTAINER_NAME", "video-edit-agent")
 NOVA_REEL_S3_BUCKET = os.environ.get("NOVA_REEL_S3_BUCKET", "")
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
 dynamodb = boto3.resource("dynamodb")
 ecs = boto3.client("ecs")
@@ -84,6 +85,7 @@ def handler(event, context):
                         {"name": "INPUT_KEYS", "value": json.dumps(input_keys)},
                         {"name": "NOVA_REEL_S3_BUCKET", "value": NOVA_REEL_S3_BUCKET},
                         {"name": "VIDEO_MODEL", "value": video_model},
+                        {"name": "TAVILY_API_KEY", "value": TAVILY_API_KEY},
                     ],
                 }
             ]
