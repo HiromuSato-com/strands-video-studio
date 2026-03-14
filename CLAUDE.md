@@ -81,12 +81,11 @@ Browser → CloudFront (S3) → React/Vite UI
 | CloudFront | グローバル | フロントエンド CDN |
 | DynamoDB | ap-northeast-1 | タスクステータス / ファイル分析結果 / チャット履歴 |
 | Bedrock (Claude) | us-east-1 | `us.anthropic.claude-sonnet-4-6` |
-| Bedrock (Luma) | us-west-2 | `luma.ray-v2:0` |
-| Bedrock (Nova) | us-east-1 | `amazon.nova-reel-v1:0` |
+| Bedrock (Nova Reel) | us-east-1 | `amazon.nova-reel-v1:1` |
 | Bedrock (Nova Canvas) | us-east-1 | `amazon.nova-canvas-v1:0` |
 | Amazon Polly | ap-northeast-1 | 音声合成（generate_speech） |
-| S3 Luma 出力 | us-west-2 | Bedrock コンソール自動作成バケット |
 | S3 Nova 出力 | us-east-1 | Bedrock コンソール自動作成バケット |
+| Tavily MCP | 外部 API | Web 検索（stdio subprocess, ECS コンテナ内） |
 
 ## S3 バケット
 
@@ -106,6 +105,7 @@ Browser → CloudFront (S3) → React/Vite UI
 | GET | /upload-url | upload_url.py | S3 presigned PUT URL |
 | POST | /tasks | create_task.py | タスク作成 + Fargate 起動 |
 | GET | /tasks/{id} | get_task.py | ステータスポーリング |
+| POST | /tasks/{id}/approve | approve_task.py | AI 生成承認フロー（承認/拒否） |
 | GET | /download-url/{id} | download_url.py | S3 presigned GET URL |
 | POST | /chat | chat.py | AI チャット（DynamoDB session 管理） |
 | DELETE | /files | delete_file.py | 入力ファイル削除（tasks/*/input/* のみ） |
@@ -121,9 +121,9 @@ Browser → CloudFront (S3) → React/Vite UI
 | `DYNAMODB_TABLE` | create_task.py | DynamoDB テーブル名 |
 | `INSTRUCTION` | create_task.py | 自然言語指示 |
 | `INPUT_KEYS` | create_task.py | JSON 配列の S3 入力キー |
-| `LUMA_S3_BUCKET` | create_task.py | Luma AI 出力バケット（us-west-2） |
 | `NOVA_REEL_S3_BUCKET` | create_task.py | Nova Reel 出力バケット（us-east-1） |
-| `VIDEO_MODEL` | create_task.py | `"luma"` / `"nova_reel"` / `"none"`（AI生成なし編集のみ） |
+| `VIDEO_MODEL` | create_task.py | `"nova_reel"` / `"none"`（AI生成なし編集のみ） |
+| `TAVILY_API_KEY` | create_task.py | Tavily Web 検索 API キー（空の場合は Tavily 無効） |
 
 ## Strands Agents コーディングパターン
 
@@ -139,6 +139,47 @@ def my_tool(param: str) -> str:
 model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-6", region_name="us-east-1")
 agent = Agent(model=model, system_prompt="...", tools=[my_tool])
 result = agent("自然言語指示")
+```
+
+### ToolContext による承認フロー
+
+```python
+from strands import tool
+from strands.types.tools import ToolContext
+
+@tool(context=True)
+def my_tool(param: str, tool_context: ToolContext = None) -> str:
+    """承認が必要なツール"""
+    # 初回呼び出し: InterruptException を raise してエージェントを一時停止
+    # resume 後の呼び出し: ユーザーの応答（"APPROVED" / "DENIED"）を返す
+    response = tool_context.interrupt(
+        "approve_generation",
+        reason={"tool": "ツール名", "prompt": param},
+    )
+    if response != "APPROVED":
+        return json.dumps({"status": "cancelled"})
+    # ... 処理続行
+```
+
+### MCP ツール（Tavily Web 検索）
+
+```python
+from mcp import StdioServerParameters, stdio_client
+from strands.tools.mcp import MCPClient
+
+tavily_client = MCPClient(
+    lambda: stdio_client(
+        StdioServerParameters(
+            command="tavily-mcp",   # Dockerfile で npm install -g tavily-mcp 済み
+            args=[],
+            env={**os.environ, "TAVILY_API_KEY": api_key},
+        )
+    )
+)
+# コンテキストマネージャが必須
+tavily_client.__enter__()
+mcp_tools = tavily_client.list_tools_sync()   # tavily-search, tavily-extract 等
+agent = Agent(tools=[*existing_tools, *mcp_tools])
 ```
 
 ## 動画生成フロー（Luma AI Ray 2）
@@ -292,9 +333,18 @@ aws s3 sync dist/ s3://<frontend-bucket>/ --profile <your-aws-profile>
 ### タスクステータス遷移
 
 ```
-PENDING → RUNNING → COMPLETED（output_key あり）
+PENDING → RUNNING → WAITING_APPROVAL（AI生成前の承認待ち）
+                  ↓ 承認 → RUNNING → COMPLETED（output_key あり）
+                  ↓ 拒否 → RUNNING → COMPLETED / FAILED
+                  → COMPLETED（output_key あり）
                   → FAILED（output_key なし、または例外）
 ```
+
+#### 承認フロー（ToolContext）
+- `generate_video_nova_reel` / `generate_image` / `generate_speech` は実行前に `tool_context.interrupt()` でユーザー確認を求める
+- ECS コンテナが DynamoDB に `WAITING_APPROVAL` を書き込み、`approval_response` フィールドをポーリング（最大3日間）
+- フロントエンドが `WAITING_APPROVAL` を検知 → 承認ダイアログを表示
+- ユーザーが `POST /tasks/{id}/approve` を呼ぶと ECS が再開
 
 ### ファイル分析フロー（analyzer.py）
 
@@ -305,7 +355,17 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 5. 分析結果を `file_analysis` テーブルに保存（TTL 24h）
 6. チャット init 時にフロントエンドが分析結果を参照してチャット提案を強化
 
-## ツール一覧（backend/agent/tools.py）
+## ツール一覧（backend/agent/tools.py + Tavily MCP）
+
+### Web 検索（Tavily MCP — stdio subprocess）
+| ツール名 | 説明 |
+|---------|------|
+| `tavily-search` | リアルタイム Web 検索。スタイル参考・BGMジャンル・プロンプトのアイデア調査に使う |
+| `tavily-extract` | 指定 URL のページ内容を抽出する |
+| `tavily-map` | サイトのページ構造をマッピング |
+| `tavily-crawl` | サイトを体系的にクロール |
+
+> `TAVILY_API_KEY` 環境変数が設定されている場合のみ有効。空の場合は Tavily なしで起動。
 
 ### ファイル操作
 | ツール名 | 説明 |
@@ -343,10 +403,9 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 | ツール名 | 説明 |
 |---------|------|
 | `generate_video` | Luma AI Ray 2 でテキストから動画生成（5s/9s, 720p/540p, us-west-2） |
-| `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定, us-east-1） |
-| `generate_video_from_image` | Luma AI Ray 2 で画像→動画生成（image-to-video、us-west-2） |
-| `generate_image` | Amazon Nova Canvas で画像生成（PNG, us-east-1）。`negative_prompt` でネガティブプロンプト指定可 |
-| `generate_speech` | Amazon Polly でテキスト音声合成（MP3, ap-northeast-1） |
+| `generate_video_nova_reel` | Amazon Nova Reel でテキストから動画生成（最大6s, 1280×720固定, us-east-1, `nova-reel-v1:1`）。**実行前に承認フローあり** |
+| `generate_image` | Amazon Nova Canvas で画像生成（PNG, us-east-1）。`negative_prompt` でネガティブプロンプト指定可。**実行前に承認フローあり** |
+| `generate_speech` | Amazon Polly でテキスト音声合成（MP3, ap-northeast-1）。**実行前に承認フローあり** |
 
 ## よくあるトラブル
 
@@ -360,3 +419,6 @@ PENDING → RUNNING → COMPLETED（output_key あり）
 | Bedrock モデルが見つからない | 対象リージョンでモデルを有効化済みか確認 |
 | チャットモーダルでメッセージリストがスクロールできない | `ChatModal.tsx` の wrapper div に `flex flex-col` が必要（`overflow-y-auto` が効かない） |
 | チャットリセット後も過去の会話が表示される | `chatSessionId` を localStorage で保持すると DynamoDB の過去履歴が復元される → アプリ起動ごとに新規 UUID を生成すること |
+| AI 生成タスクが承認待ちのまま進まない | フロントエンドで `WAITING_APPROVAL` ダイアログが表示されているか確認。表示されない場合は ECS ログで `approval_request` フィールドを確認 |
+| 承認後もタスクが動かない | ECS コンテナが DynamoDB の `approval_response` をポーリング中（10秒間隔）。少し待つ。タイムアウトは3日間 |
+| Tavily MCP が起動しない | ECS ログで `Tavily MCP tools loaded` が出るか確認。`TAVILY_API_KEY` が Lambda 環境変数に設定されているか `terraform apply` 済みか確認 |
