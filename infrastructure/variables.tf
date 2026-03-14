@@ -27,3 +27,10 @@ variable "nova_reel_s3_bucket_name" {
   type        = string
   default     = ""
 }
+
+variable "tavily_api_key" {
+  description = "Tavily API key for web search via MCP (https://tavily.com). Leave empty to disable Tavily search."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

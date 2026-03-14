@@ -1,6 +1,10 @@
-aws_region     = "ap-northeast-1"
-project_name   = "video-edit"
-bedrock_region = "us-east-1"
+aws_region               = "ap-northeast-1"
+project_name             = "video-edit"
+bedrock_region           = "us-east-1"
+nova_reel_s3_bucket_name = "bedrock-video-generation-us-east-1-xxxxxxx"
+
+# Tavily API key for web search via MCP (https://tavily.com)
+tavily_api_key = "tvly-dev-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # Replace with your VPC ID
 vpc_id = "vpc-xxxxxxxxxxxxxxxxx"

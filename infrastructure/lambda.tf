@@ -91,6 +91,7 @@ resource "aws_lambda_function" "create_task" {
       ECS_SECURITY_GROUP_ID = aws_security_group.ecs_tasks.id
       CONTAINER_NAME        = "video-edit-agent"
       NOVA_REEL_S3_BUCKET   = data.aws_s3_bucket.nova_reel_output.bucket
+      TAVILY_API_KEY        = var.tavily_api_key
     })
   }
 

@@ -9,6 +9,9 @@ COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-ipafont-gothic \
     fonts-noto-cjk \
+    nodejs \
+    npm \
+    && npm install -g tavily-mcp \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
