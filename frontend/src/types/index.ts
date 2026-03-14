@@ -1,4 +1,11 @@
-export type TaskStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+export type TaskStatus = "PENDING" | "RUNNING" | "WAITING_APPROVAL" | "COMPLETED" | "FAILED";
+
+export interface ApprovalRequest {
+  interrupt_id: string;
+  tool: string;
+  prompt: string;
+  duration_sec?: number;
+}
 
 export interface Task {
   task_id: string;
@@ -10,6 +17,7 @@ export interface Task {
   updated_at: string;
   error_message?: string;
   agent_result?: string;
+  approval_request?: string; // JSON string of ApprovalRequest
 }
 
 export interface UploadUrlResponse {

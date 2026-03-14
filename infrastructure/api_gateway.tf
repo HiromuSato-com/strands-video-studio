@@ -99,3 +99,16 @@ resource "aws_apigatewayv2_route" "delete_file" {
   route_key = "DELETE /files"
   target    = "integrations/${aws_apigatewayv2_integration.delete_file.id}"
 }
+
+resource "aws_apigatewayv2_integration" "approve_task" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.approve_task.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "approve_task" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /tasks/{id}/approve"
+  target    = "integrations/${aws_apigatewayv2_integration.approve_task.id}"
+}

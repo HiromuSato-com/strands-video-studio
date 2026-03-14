@@ -19,8 +19,9 @@ import {
   confirmChat,
   initChat,
   deleteFile,
+  approveTask,
 } from "./api/client";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ApprovalRequest } from "./types";
 import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
@@ -91,9 +92,10 @@ export default function App() {
   useEffect(() => {
     if (!task || task.status === prevStatusRef.current) return;
     prevStatusRef.current = task.status;
-    if (task.status === "RUNNING")    playSound(Snd.SOUNDS.NOTIFICATION);
-    if (task.status === "COMPLETED")  playSound(Snd.SOUNDS.CELEBRATION);
-    if (task.status === "FAILED")     playSound(Snd.SOUNDS.CAUTION);
+    if (task.status === "RUNNING")          playSound(Snd.SOUNDS.NOTIFICATION);
+    if (task.status === "WAITING_APPROVAL") playSound(Snd.SOUNDS.CAUTION);
+    if (task.status === "COMPLETED")        playSound(Snd.SOUNDS.CELEBRATION);
+    if (task.status === "FAILED")           playSound(Snd.SOUNDS.CAUTION);
   }, [task?.status]);
 
   const handleCompleted = useCallback(
@@ -261,6 +263,16 @@ export default function App() {
     if (selectedFiles.length > 0) {
       setSetupPhase("main");
       setTimeout(() => instructionRef.current?.querySelector("textarea")?.focus(), 50);
+    }
+  };
+
+  const handleApprove = async (approved: boolean) => {
+    if (!taskId) return;
+    playSound(Snd.SOUNDS.BUTTON);
+    try {
+      await approveTask(taskId, approved);
+    } catch (e) {
+      console.error("approveTask failed", e);
     }
   };
 
@@ -654,6 +666,52 @@ export default function App() {
                 <div className="space-y-3 mt-4">
                   <StepBadge index={2} />
                   <TaskStatus task={task} pollingError={pollingError} />
+
+                  {task.status === "WAITING_APPROVAL" && (() => {
+                    let req: ApprovalRequest | null = null;
+                    try { req = JSON.parse(task.approval_request ?? ""); } catch { /* ignore */ }
+                    return (
+                      <div
+                        className="rounded-xl p-4 space-y-3"
+                        style={{ background: "#FFF8E7", border: `2px solid ${C.accent}` }}
+                      >
+                        <p className="text-sm font-semibold" style={{ color: C.accent }}>
+                          ⚠ AI 生成の実行確認
+                        </p>
+                        {req && (
+                          <>
+                            <p className="text-xs" style={{ color: C.textSub }}>
+                              <span className="font-medium">{req.tool}</span> を実行しようとしています。
+                            </p>
+                            <p className="text-xs px-3 py-2 rounded-lg font-mono break-all" style={{ background: C.card, color: C.textMain }}>
+                              {req.prompt}
+                              {req.duration_sec != null && ` (${req.duration_sec}秒)`}
+                            </p>
+                          </>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleApprove(true)}
+                            className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
+                            style={{ background: C.accent, color: C.card }}
+                            onMouseEnter={e => (e.currentTarget.style.background = C.accentHover)}
+                            onMouseLeave={e => (e.currentTarget.style.background = C.accent)}
+                          >
+                            承認して生成
+                          </button>
+                          <button
+                            onClick={() => handleApprove(false)}
+                            className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
+                            style={{ border: `1px solid ${C.border}`, color: C.textSub, background: "transparent" }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSub; }}
+                          >
+                            キャンセル
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {task.status === "COMPLETED" && downloadUrl && !showModal && (
                     <button
