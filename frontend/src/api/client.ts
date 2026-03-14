@@ -115,13 +115,6 @@ export async function sendChatMessage(
   return data;
 }
 
-export async function approveTask(
-  taskId: string,
-  approved: boolean
-): Promise<void> {
-  await api.post(`/tasks/${taskId}/approve`, { approved });
-}
-
 export async function confirmChat(
   sessionId: string
 ): Promise<ChatConfirmResponse> {
