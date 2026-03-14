@@ -174,7 +174,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Sid    = "ECSRunTask"
         Effect = "Allow"
         Action = ["ecs:RunTask"]
-        Resource = aws_ecs_task_definition.agent.arn
+        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.project_name}-agent:*"
       },
       {
         Sid    = "PassRoleToECS"
