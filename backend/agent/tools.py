@@ -292,7 +292,7 @@ def generate_video_nova_reel(
 
     try:
         response = bedrock_nova.start_async_invoke(
-            modelId="amazon.nova-reel-v1:0",
+            modelId="amazon.nova-reel-v1:1",
             modelInput={
                 "taskType": "TEXT_VIDEO",
                 "textToVideoParams": {"text": prompt},
