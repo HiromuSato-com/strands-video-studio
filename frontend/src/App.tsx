@@ -24,7 +24,7 @@ import type { ChatMessage } from "./types";
 import { playSound, Snd } from "./lib/snd";
 
 type AppStep = "idle" | "uploading" | "submitted";
-type VideoModel = "luma" | "nova_reel" | "none";
+type VideoModel = "nova_reel" | "none";
 type SetupPhase = "file" | "main";
 
 interface UploadProgress {
@@ -511,7 +511,6 @@ export default function App() {
                     onBlur={e => (e.currentTarget.style.borderColor = C.border)}
                   >
                     <option value="none">動画編集モード</option>
-                    <option value="luma">Luma AI Ray 2</option>
                     <option value="nova_reel">Amazon Nova Reel</option>
                   </select>
 
@@ -530,22 +529,6 @@ export default function App() {
                           <li>✦ AI による動画生成は行いません（高速・低コスト）</li>
                           <li>✦ 日本語テロップや字幕の追加に最適</li>
                         </ul>
-                      </>
-                    )}
-                    {videoModel === "luma" && (
-                      <>
-                        <p className="text-[10px] font-semibold" style={{ color: C.accent }}>
-                          🎬 Luma AI Ray 2 の特徴
-                        </p>
-                        <ul className="space-y-1 text-[10px] leading-relaxed" style={{ color: C.textSub }}>
-                          <li>✦ 流体・煙・滝など複雑な物理現象を高精度にレンダリング</li>
-                          <li>✦ 人物の微妙な表情・手の動き・自然なボディランゲージの再現に優れる</li>
-                          <li>✦ スケール・遠近法・細部まで忠実に映像化する高い指示実行能力</li>
-                          <li>✦ プロモーション動画・製品モックアップ・VFX プレビズに最適</li>
-                        </ul>
-                        <p className="text-[9px] pt-0.5" style={{ color: C.textMuted }}>
-                          5s / 9s　540p〜720p　生成: 約2〜8分
-                        </p>
                       </>
                     )}
                     {videoModel === "nova_reel" && (
@@ -627,7 +610,7 @@ export default function App() {
                   ))}
                   {videoModel !== "none" && (
                     <span className="text-[10px]" style={{ color: C.textMuted }}>
-                      {videoModel === "luma" ? "Luma AI Ray 2" : "Amazon Nova Reel"}
+                      Amazon Nova Reel
                     </span>
                   )}
                 </div>

@@ -21,13 +21,9 @@ logger = logging.getLogger(__name__)
 # Environment variables injected at Fargate task launch
 S3_BUCKET = os.environ["S3_BUCKET"]
 TASK_ID = os.environ["TASK_ID"]
-LUMA_S3_BUCKET = os.environ.get("LUMA_S3_BUCKET", "")
 NOVA_REEL_S3_BUCKET = os.environ.get("NOVA_REEL_S3_BUCKET", "")
 
 s3 = boto3.client("s3")
-# Luma AI Ray 2 is only available in us-west-2 (Oregon)
-bedrock_luma = boto3.client("bedrock-runtime", region_name="us-west-2")
-s3_luma = boto3.client("s3", region_name="us-west-2")
 # Amazon Nova Reel, Nova Canvas, and Claude Vision are available in us-east-1
 bedrock_nova = boto3.client("bedrock-runtime", region_name="us-east-1")
 s3_nova = boto3.client("s3", region_name="us-east-1")
@@ -266,113 +262,6 @@ def concat_videos(input_keys: list[str]) -> str:
 
 
 @tool
-def generate_video(
-    prompt: str,
-    duration: str = "5s",
-    aspect_ratio: str = "16:9",
-    resolution: str = "720p",
-) -> str:
-    """
-    Generate a video from a text prompt using Luma AI Ray 2 on Amazon Bedrock (us-west-2).
-    The generated video is copied to the main Tokyo S3 bucket.
-
-    Args:
-        prompt: Text description of the video to generate (1–5000 characters)
-        duration: Video length — "5s" (default) or "9s"
-        aspect_ratio: Aspect ratio — "16:9" (default), "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"
-        resolution: Output resolution — "720p" (default) or "540p"
-
-    Returns:
-        S3 key of the generated output video (in the main Tokyo bucket)
-    """
-    if not LUMA_S3_BUCKET:
-        return json.dumps({"status": "failed", "error": "LUMA_S3_BUCKET env var not set"})
-
-    # Clamp to valid values ("5s" or "9s")
-    if duration not in ("5s", "9s"):
-        try:
-            sec = float(duration.rstrip("s"))
-        except ValueError:
-            sec = 0
-        duration = "9s" if sec >= 7 else "5s"
-        logger.info(f"duration adjusted to {duration}")
-
-    # Clamp resolution to valid values
-    if resolution not in ("720p", "540p"):
-        resolution = "720p"
-        logger.info(f"resolution adjusted to 720p")
-
-    # Clamp aspect_ratio to valid values
-    valid_ratios = {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"}
-    if aspect_ratio not in valid_ratios:
-        aspect_ratio = "16:9"
-        logger.info(f"aspect_ratio adjusted to 16:9")
-
-    # Luma AI output must go to us-west-2 bucket (same region as the model)
-    luma_output_prefix = f"s3://{LUMA_S3_BUCKET}/tasks/{TASK_ID}/output/"
-
-    logger.info(
-        f"Starting Luma AI video generation: prompt='{prompt[:80]}...' "
-        f"duration={duration} aspect_ratio={aspect_ratio} resolution={resolution}"
-    )
-
-    try:
-        response = bedrock_luma.start_async_invoke(
-            modelId="luma.ray-v2:0",
-            modelInput={
-                "prompt": prompt,
-                "duration": duration,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-            },
-            outputDataConfig={
-                "s3OutputDataConfig": {"s3Uri": luma_output_prefix}
-            },
-        )
-    except Exception as e:
-        logger.error(f"start_async_invoke failed: {type(e).__name__}: {e}")
-        return json.dumps({"status": "failed", "error": str(e)})
-
-    invocation_arn = response["invocationArn"]
-    logger.info(f"Bedrock async invoke started: {invocation_arn}")
-
-    # Poll until completed or failed (timeout: 15 minutes)
-    timeout_sec = 900
-    poll_interval = 15
-    elapsed = 0
-    while elapsed < timeout_sec:
-        time.sleep(poll_interval)
-        elapsed += poll_interval
-        status_resp = bedrock_luma.get_async_invoke(invocationArn=invocation_arn)
-        status = status_resp["status"]
-        logger.info(f"Bedrock job status: {status} (elapsed {elapsed}s)")
-        if status == "Completed":
-            break
-        if status == "Failed":
-            failure = status_resp.get("failureMessage", "unknown error")
-            return json.dumps({"status": "failed", "error": failure})
-    else:
-        return json.dumps({"status": "failed", "error": "Timeout waiting for video generation"})
-
-    # Bedrock saves output under {prefix}{invocation_id}/output.mp4
-    invocation_id = invocation_arn.split("/")[-1]
-    luma_key = f"tasks/{TASK_ID}/output/{invocation_id}/output.mp4"
-
-    # Download from Oregon (us-west-2) and re-upload to Tokyo (ap-northeast-1)
-    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
-    try:
-        logger.info(f"Downloading from Oregon bucket: s3://{LUMA_S3_BUCKET}/{luma_key}")
-        s3_luma.download_file(LUMA_S3_BUCKET, luma_key, local_output)
-        output_key = _upload_to_s3(local_output, "generated.mp4")
-    finally:
-        if os.path.exists(local_output):
-            os.remove(local_output)
-
-    logger.info(f"Video generation complete. Copied to Tokyo: {output_key}")
-    return json.dumps({"output_key": output_key, "status": "success"})
-
-
-@tool
 def generate_video_nova_reel(
     prompt: str,
     duration_sec: int = 6,
@@ -403,7 +292,7 @@ def generate_video_nova_reel(
 
     try:
         response = bedrock_nova.start_async_invoke(
-            modelId="amazon.nova-reel-v1:0",
+            modelId="amazon.nova-reel-v1:1",
             modelInput={
                 "taskType": "TEXT_VIDEO",
                 "textToVideoParams": {"text": prompt},
@@ -1475,114 +1364,3 @@ def detect_scenes(
             os.remove(local_input)
 
 
-@tool
-def generate_video_from_image(
-    image_key: str,
-    prompt: str,
-    duration: str = "5s",
-    aspect_ratio: str = "16:9",
-    resolution: str = "720p",
-) -> str:
-    """
-    Generate a video that starts from a specific image using Luma AI Ray 2 (image-to-video).
-    The generated video will begin with the provided image and animate it according to the prompt.
-    Use this when you want to bring a still image or AI-generated image to life.
-
-    Args:
-        image_key: S3 key of the source image (JPG or PNG) to use as the first frame
-        prompt: Text description of how the image should animate (1–5000 characters)
-        duration: Video length — "5s" (default) or "9s"
-        aspect_ratio: Aspect ratio — "16:9" (default), "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"
-        resolution: Output resolution — "720p" (default) or "540p"
-
-    Returns:
-        S3 key of the generated output video
-    """
-    if not LUMA_S3_BUCKET:
-        return json.dumps({"status": "failed", "error": "LUMA_S3_BUCKET env var not set"})
-
-    if duration not in ("5s", "9s"):
-        try:
-            sec = float(duration.rstrip("s"))
-        except ValueError:
-            sec = 0
-        duration = "9s" if sec >= 7 else "5s"
-
-    if resolution not in ("720p", "540p"):
-        resolution = "720p"
-
-    valid_ratios = {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"}
-    if aspect_ratio not in valid_ratios:
-        aspect_ratio = "16:9"
-
-    # Generate a presigned URL so Luma AI can fetch the image
-    presigned_url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": image_key},
-        ExpiresIn=3600,
-    )
-
-    luma_output_prefix = f"s3://{LUMA_S3_BUCKET}/tasks/{TASK_ID}/output/"
-    logger.info(
-        f"Starting Luma AI image-to-video: image={image_key} prompt='{prompt[:60]}...' "
-        f"duration={duration} aspect_ratio={aspect_ratio} resolution={resolution}"
-    )
-
-    try:
-        response = bedrock_luma.start_async_invoke(
-            modelId="luma.ray-v2:0",
-            modelInput={
-                "prompt": prompt,
-                "duration": duration,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-                "keyframes": {
-                    "frame0": {
-                        "type": "image",
-                        "url": presigned_url,
-                    }
-                },
-            },
-            outputDataConfig={
-                "s3OutputDataConfig": {"s3Uri": luma_output_prefix}
-            },
-        )
-    except Exception as e:
-        logger.error(f"generate_video_from_image start_async_invoke failed: {e}")
-        return json.dumps({"status": "failed", "error": str(e)})
-
-    invocation_arn = response["invocationArn"]
-    logger.info(f"Bedrock async invoke started: {invocation_arn}")
-
-    # Poll until completed (timeout: 15 minutes)
-    timeout_sec = 900
-    poll_interval = 15
-    elapsed = 0
-    while elapsed < timeout_sec:
-        time.sleep(poll_interval)
-        elapsed += poll_interval
-        status_resp = bedrock_luma.get_async_invoke(invocationArn=invocation_arn)
-        status = status_resp["status"]
-        logger.info(f"Bedrock job status: {status} (elapsed {elapsed}s)")
-        if status == "Completed":
-            break
-        if status == "Failed":
-            failure = status_resp.get("failureMessage", "unknown error")
-            return json.dumps({"status": "failed", "error": failure})
-    else:
-        return json.dumps({"status": "failed", "error": "Timeout waiting for image-to-video generation"})
-
-    invocation_id = invocation_arn.split("/")[-1]
-    luma_key = f"tasks/{TASK_ID}/output/{invocation_id}/output.mp4"
-
-    local_output = f"/tmp/{uuid.uuid4().hex}.mp4"
-    try:
-        logger.info(f"Downloading from Oregon bucket: s3://{LUMA_S3_BUCKET}/{luma_key}")
-        s3_luma.download_file(LUMA_S3_BUCKET, luma_key, local_output)
-        output_key = _upload_to_s3(local_output, "image_to_video.mp4")
-    finally:
-        if os.path.exists(local_output):
-            os.remove(local_output)
-
-    logger.info(f"Image-to-video complete. Copied to Tokyo: {output_key}")
-    return json.dumps({"output_key": output_key, "status": "success"})
