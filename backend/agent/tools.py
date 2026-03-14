@@ -15,7 +15,6 @@ import time
 
 import boto3
 from strands import tool
-from strands.types.tools import ToolContext
 
 logger = logging.getLogger(__name__)
 
@@ -262,11 +261,10 @@ def concat_videos(input_keys: list[str]) -> str:
                 os.remove(path)
 
 
-@tool(context=True)
+@tool
 def generate_video_nova_reel(
     prompt: str,
     duration_sec: int = 6,
-    tool_context: ToolContext = None,
 ) -> str:
     """
     Generate a video from a text prompt using Amazon Nova Reel on Amazon Bedrock (us-east-1).
@@ -284,14 +282,6 @@ def generate_video_nova_reel(
 
     # Clamp duration to valid range
     duration_sec = max(1, min(6, int(duration_sec)))
-
-    # 承認フロー: 生成前にユーザー確認を求める
-    approval = tool_context.interrupt(
-        "approve_generation",
-        reason={"tool": "Amazon Nova Reel 動画生成", "prompt": prompt[:200], "duration_sec": duration_sec},
-    )
-    if approval != "APPROVED":
-        return json.dumps({"status": "cancelled", "message": "ユーザーによってキャンセルされました"})
 
     # Nova Reel output must go to us-east-1 bucket (same region as the model)
     nova_output_prefix = f"s3://{NOVA_REEL_S3_BUCKET}/tasks/{TASK_ID}/output/"
@@ -961,13 +951,12 @@ def color_filter(
 # ─── AI 生成系ツール ───────────────────────────────────────────────────────────
 
 
-@tool(context=True)
+@tool
 def generate_image(
     prompt: str,
     width: int = 1024,
     height: int = 1024,
     negative_prompt: str = "",
-    tool_context: ToolContext = None,
 ) -> str:
     """
     Generate an image from a text prompt using Amazon Nova Canvas on Amazon Bedrock (us-east-1).
@@ -983,14 +972,6 @@ def generate_image(
         S3 key of the generated image (PNG)
     """
     import base64
-
-    # 承認フロー: 生成前にユーザー確認を求める
-    approval = tool_context.interrupt(
-        "approve_generation",
-        reason={"tool": "Amazon Nova Canvas 画像生成", "prompt": prompt[:200]},
-    )
-    if approval != "APPROVED":
-        return json.dumps({"status": "cancelled", "message": "ユーザーによってキャンセルされました"})
 
     local_output = f"/tmp/{uuid.uuid4().hex}.png"
     try:
@@ -1030,12 +1011,11 @@ def generate_image(
             os.remove(local_output)
 
 
-@tool(context=True)
+@tool
 def generate_speech(
     text: str,
     voice_id: str = "Takumi",
     engine: str = "neural",
-    tool_context: ToolContext = None,
 ) -> str:
     """
     Generate speech audio from text using Amazon Polly (ap-northeast-1).
@@ -1050,14 +1030,6 @@ def generate_speech(
     Returns:
         S3 key of the generated MP3 audio file
     """
-    # 承認フロー: 生成前にユーザー確認を求める
-    approval = tool_context.interrupt(
-        "approve_generation",
-        reason={"tool": "Amazon Polly 音声生成", "prompt": text[:200]},
-    )
-    if approval != "APPROVED":
-        return json.dumps({"status": "cancelled", "message": "ユーザーによってキャンセルされました"})
-
     local_output = f"/tmp/{uuid.uuid4().hex}.mp3"
     try:
         response = polly.synthesize_speech(
