@@ -4,7 +4,6 @@ import { getTask } from "../api/client";
 
 const POLL_INTERVAL_MS = 3000;
 const TERMINAL_STATUSES: TaskStatus[] = ["COMPLETED", "FAILED"];
-// WAITING_APPROVAL はポーリングを継続する（承認後に RUNNING → COMPLETED に遷移する）
 
 export function useTaskPoller(taskId: string | null) {
   const [task, setTask] = useState<Task | null>(null);
