@@ -483,33 +483,43 @@ export default function App() {
       <div className="flex flex-1 min-h-0 overflow-hidden relative z-10">
 
         {/* ─── Center: Character stage ─── */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 py-4 overflow-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 py-2 overflow-hidden">
 
-          {/* Character avatar (large, center stage) */}
-          <CharacterAvatar state={characterState} size={240} />
-
-          {/* Name + state */}
-          <div className="text-center">
-            <p className="font-bold text-xl tracking-wide" style={{ color: C.textMain }}>
-              ムービィ
-            </p>
-            <p
-              className="text-sm mt-1 font-medium"
-              style={{ color: STATE_COLOR[characterState] }}
-            >
-              {STATE_LABEL[characterState]}
-            </p>
+          {/* Character avatar + name/state overlay */}
+          <div className="relative flex-shrink-0">
+            <CharacterAvatar state={characterState} size={240} />
+            {/* Name + state overlaid at bottom of character */}
+            <div className="absolute bottom-1 left-0 right-0 flex justify-center">
+              <div
+                className="flex items-center gap-2 px-3 py-1 rounded-full"
+                style={{
+                  background: "rgba(8,4,18,0.78)",
+                  border: `1px solid ${C.border}`,
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <span className="font-bold text-sm" style={{ color: C.textMain }}>ムービィ</span>
+                <span className="text-[11px]" style={{ color: STATE_COLOR[characterState] }}>
+                  {STATE_LABEL[characterState]}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Speech bubble (subtitle) */}
+          {/* Speech bubble (subtitle) — 最大2行 */}
           {subtitleText && (
             <div
-              className="max-w-xl w-full rounded-2xl px-6 py-3 text-sm text-center leading-relaxed"
+              className="max-w-xl w-full rounded-2xl px-5 py-2.5 text-sm text-center"
               style={{
                 background: "rgba(14,6,34,0.82)",
                 border: `1px solid ${C.border}`,
                 backdropFilter: "blur(10px)",
                 color: C.textMain,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+                lineHeight: "1.5",
               }}
             >
               {subtitleText}
