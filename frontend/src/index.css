@@ -66,6 +66,7 @@
 .mooby-work     { animation: mooby-work    0.45s ease-in-out infinite; }
 .mooby-complete { animation: mooby-bounce  0.9s  ease-in-out 5; }
 .mooby-error    { animation: mooby-droop   2.0s  ease-in-out infinite; }
+.anime-work     { animation: mooby-float   4.0s  ease-in-out infinite; }
 
 /* ─── Typing dots (shared keyframe) ─────────────────────────────────────── */
 @keyframes typingPulse {

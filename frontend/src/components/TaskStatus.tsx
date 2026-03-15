@@ -26,10 +26,11 @@ interface PhaseConfig {
 }
 
 const STATUS_INFO: Record<TStatus, PhaseConfig> = {
-  PENDING:   { phaseIdx: 0, label: "STAND BY",   sub: "システム準備中", pct: 12,  color: C.textMuted },
-  RUNNING:   { phaseIdx: 1, label: "PROCESSING", sub: "AI処理実行中",  pct: 62,  color: C.accent    },
-  COMPLETED: { phaseIdx: 2, label: "COMPLETE",   sub: "ミッション達成", pct: 100, color: C.ok        },
-  FAILED:    { phaseIdx: -1, label: "SYS ERROR", sub: "処理失敗",      pct: 0,   color: C.error     },
+  PENDING:          { phaseIdx: 0, label: "STAND BY",   sub: "システム準備中",   pct: 12,  color: C.textMuted },
+  RUNNING:          { phaseIdx: 1, label: "PROCESSING", sub: "AI処理実行中",    pct: 62,  color: C.accent    },
+  WAITING_APPROVAL: { phaseIdx: 1, label: "WAITING",    sub: "承認をお待ちです", pct: 75,  color: C.accent    },
+  COMPLETED:        { phaseIdx: 2, label: "COMPLETE",   sub: "ミッション達成",   pct: 100, color: C.ok        },
+  FAILED:           { phaseIdx: -1, label: "SYS ERROR", sub: "処理失敗",        pct: 0,   color: C.error     },
 };
 
 const SEG = 20;
