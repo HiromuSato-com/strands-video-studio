@@ -10,12 +10,6 @@ variable "project_name" {
   default     = "video-edit"
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
 variable "bedrock_region" {
   description = "AWS region for Amazon Bedrock (must support Claude Sonnet)"
   type        = string
@@ -33,4 +27,15 @@ variable "tavily_api_key" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "agentcore_runtime_arn" {
+  description = <<-EOT
+    Amazon Bedrock AgentCore Runtime ARN.
+    初回は空のまま terraform apply → scripts/deploy-agentcore.sh を実行すると
+    terraform.tfvars に自動書き込みされる。
+    書き込み後に再度 terraform apply を実行すること。
+  EOT
+  type        = string
+  default     = ""
 }

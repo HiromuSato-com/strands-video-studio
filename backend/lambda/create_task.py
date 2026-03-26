@@ -3,7 +3,8 @@ POST /tasks
 
 Body: { "instruction": "...", "input_keys": ["tasks/xxx/input/video.mp4", ...] }
 
-Creates a DynamoDB task record and triggers an ECS Fargate task.
+Creates a DynamoDB task record and sends a message to SQS.
+SQS triggers runner_lambda.py which calls Amazon Bedrock AgentCore Runtime.
 Returns: { "task_id": "..." }
 """
 
@@ -16,16 +17,12 @@ import boto3
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
-ECS_CLUSTER = os.environ["ECS_CLUSTER"]
-ECS_TASK_DEFINITION = os.environ["ECS_TASK_DEFINITION"]
-ECS_SUBNET_IDS = os.environ["ECS_SUBNET_IDS"].split(",")
-ECS_SECURITY_GROUP_ID = os.environ["ECS_SECURITY_GROUP_ID"]
-CONTAINER_NAME = os.environ.get("CONTAINER_NAME", "video-edit-agent")
+SQS_QUEUE_URL = os.environ["SQS_QUEUE_URL"]
 NOVA_REEL_S3_BUCKET = os.environ.get("NOVA_REEL_S3_BUCKET", "")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
 dynamodb = boto3.resource("dynamodb")
-ecs = boto3.client("ecs")
+sqs = boto3.client("sqs")
 
 
 def handler(event, context):
@@ -61,35 +58,19 @@ def handler(event, context):
         }
     )
 
-    # Trigger ECS Fargate task
-    ecs.run_task(
-        cluster=ECS_CLUSTER,
-        taskDefinition=ECS_TASK_DEFINITION,
-        launchType="FARGATE",
-        networkConfiguration={
-            "awsvpcConfiguration": {
-                "subnets": ECS_SUBNET_IDS,
-                "securityGroups": [ECS_SECURITY_GROUP_ID],
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        overrides={
-            "containerOverrides": [
-                {
-                    "name": CONTAINER_NAME,
-                    "environment": [
-                        {"name": "TASK_ID", "value": task_id},
-                        {"name": "S3_BUCKET", "value": S3_BUCKET},
-                        {"name": "DYNAMODB_TABLE", "value": DYNAMODB_TABLE},
-                        {"name": "INSTRUCTION", "value": instruction},
-                        {"name": "INPUT_KEYS", "value": json.dumps(input_keys)},
-                        {"name": "NOVA_REEL_S3_BUCKET", "value": NOVA_REEL_S3_BUCKET},
-                        {"name": "VIDEO_MODEL", "value": video_model},
-                        {"name": "TAVILY_API_KEY", "value": TAVILY_API_KEY},
-                    ],
-                }
-            ]
-        },
+    # Send task parameters to SQS → runner_lambda → AgentCore Runtime
+    sqs.send_message(
+        QueueUrl=SQS_QUEUE_URL,
+        MessageBody=json.dumps({
+            "task_id": task_id,
+            "instruction": instruction,
+            "input_keys": input_keys,
+            "video_model": video_model,
+            "s3_bucket": S3_BUCKET,
+            "dynamodb_table": DYNAMODB_TABLE,
+            "nova_reel_s3_bucket": NOVA_REEL_S3_BUCKET,
+            "tavily_api_key": TAVILY_API_KEY,
+        }),
     )
 
     return {
