@@ -1,13 +1,18 @@
 """
-Entry point for the ECS Fargate video editing task.
+Entry point for the video editing agent.
 
-Environment variables (injected at ECS RunTask time):
-  TASK_ID        - DynamoDB task ID
-  S3_BUCKET      - S3 bucket name
-  DYNAMODB_TABLE - DynamoDB table name
-  INSTRUCTION    - Natural language editing instruction
-  INPUT_KEYS     - JSON array of S3 keys for input files
-  AWS_REGION     - AWS region
+ECS Fargate (旧): __main__ ブロックから直接起動。
+AgentCore Runtime (新): app.py の FastAPI エンドポイントから main() を呼び出す。
+
+Environment variables (set before this module is imported):
+  TASK_ID              - DynamoDB task ID
+  S3_BUCKET            - S3 bucket name
+  DYNAMODB_TABLE       - DynamoDB table name
+  INSTRUCTION          - Natural language editing instruction
+  INPUT_KEYS           - JSON array of S3 keys for input files
+  NOVA_REEL_S3_BUCKET  - S3 bucket for Nova Reel output
+  VIDEO_MODEL          - "nova_reel" | "none"
+  TAVILY_API_KEY       - Tavily API key (optional)
 """
 
 import os

@@ -3,3 +3,6 @@ strands-agents-tools>=0.1.0
 moviepy>=2.0.0
 boto3>=1.38.0
 Pillow>=10.0.0
+# AgentCore Runtime: FastAPI サーバーとして動作するために必要
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0

@@ -1,4 +1,5 @@
-FROM python:3.13-slim
+# AgentCore Runtime は ARM64 コンテナが必須
+FROM --platform=linux/arm64 python:3.13-slim
 
 COPY --from=mwader/static-ffmpeg:latest /ffmpeg /usr/local/bin/
 COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
@@ -21,4 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "main.py"]
+# AgentCore Runtime: port 8080 で FastAPI サーバーを起動
+# --workers 1 でシングルスレッド（env var の競合を防ぐ）
+EXPOSE 8080
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
