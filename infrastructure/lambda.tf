@@ -260,9 +260,6 @@ resource "aws_lambda_function" "runner" {
   timeout          = 900
   memory_size      = 256
 
-  # 同時実行数を制限（1 タスク 15 分かかるため、過剰な並列実行を防ぐ）
-  reserved_concurrent_executions = 10
-
   environment {
     variables = {
       AGENTCORE_RUNTIME_ARN = var.agentcore_runtime_arn
