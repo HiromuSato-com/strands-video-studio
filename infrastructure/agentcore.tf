@@ -132,7 +132,8 @@ resource "aws_iam_role_policy" "agentcore_runtime_policy" {
           "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
         ]
-        Resource = aws_ecr_repository.agent.arn
+        # AgentCore Runtime は us-east-1 なので us-east-1 の ECR リポジトリを使用
+        Resource = aws_ecr_repository.agent_useast1.arn
       },
       # CloudWatch Logs: コンテナログの書き込み
       {
