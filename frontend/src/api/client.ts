@@ -51,7 +51,7 @@ export async function createTask(
   taskId: string,
   instruction: string,
   inputKeys: string[],
-  videoModel: "luma" | "nova_reel" | "none" = "none"
+  videoModel: "nova_reel" | "none" = "none"
 ): Promise<CreateTaskResponse> {
   const { data } = await api.post<CreateTaskResponse>("/tasks", {
     task_id: taskId,

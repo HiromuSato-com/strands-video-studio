@@ -57,13 +57,11 @@ def main() -> None:
     task_id = get_env("TASK_ID")
     dynamodb_table_name = get_env("DYNAMODB_TABLE")
     instruction = get_env("INSTRUCTION")
-    video_model = os.environ.get("VIDEO_MODEL", "luma")
+    video_model = os.environ.get("VIDEO_MODEL", "none")
 
     # Append model hint so the agent picks the correct generation tool
     if video_model == "nova_reel":
         instruction += "\n[AI動画生成モデル: Amazon Nova Reel]"
-    elif video_model == "luma":
-        instruction += "\n[AI動画生成モデル: Luma AI Ray 2]"
     # "none": no tag appended — agent uses editing tools only
 
     dynamodb = boto3.resource("dynamodb")

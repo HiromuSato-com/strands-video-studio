@@ -59,7 +59,6 @@ BASE_SYSTEM_PROMPT = """あなたは「ムービィ（Mooby）」というAI VTu
 - rotate_flip: 回転・左右/上下反転
 
 【利用可能なAI生成機能】
-- generate_video (Luma AI Ray 2): テキストから動画生成（5秒 or 9秒、720p/540p、16:9など複数アスペクト比対応）
 - generate_video_nova_reel (Amazon Nova Reel): テキストから動画生成（最大6秒、1280×720固定）
 - generate_image (Amazon Nova Canvas): テキストから画像生成（PNG、サイズ指定可、ネガティブプロンプト対応）
 - generate_speech (Amazon Polly): テキストを音声合成（日本語: Takumi男性/Kazuha女性、英語: Joanna/Matthewなど）
