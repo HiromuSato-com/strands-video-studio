@@ -1,113 +1,6 @@
-# ─── ECS Task Execution Role (ECS agent → pull image, write logs) ────────────
-resource "aws_iam_role" "ecs_execution" {
-  name = "${var.project_name}-ecs-execution"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# ─── ECS Task Role (container code → Bedrock, S3, DynamoDB) ──────────────────
-resource "aws_iam_role" "ecs_task" {
-  name = "${var.project_name}-ecs-task"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "ecs_task_policy" {
-  name = "${var.project_name}-ecs-task-policy"
-  role = aws_iam_role.ecs_task.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "BedrockInvoke"
-        Effect = "Allow"
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-          "bedrock:StartAsyncInvoke",
-          "bedrock:GetAsyncInvoke",
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "S3Access"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          aws_s3_bucket.assets.arn,
-          "${aws_s3_bucket.assets.arn}/*",
-        ]
-      },
-      {
-        # Read/write Nova Reel videos in the N. Virginia bucket.
-        # s3:PutObject is required because Bedrock validates that the caller
-        # (ECS task role) has write access before starting the async invoke job.
-        Sid    = "NovaReelS3Access"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          data.aws_s3_bucket.nova_reel_output.arn,
-          "${data.aws_s3_bucket.nova_reel_output.arn}/*",
-        ]
-      },
-      {
-        Sid    = "DynamoDBAccess"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-        ]
-        Resource = aws_dynamodb_table.tasks.arn
-      },
-      {
-        Sid      = "PollyAccess"
-        Effect   = "Allow"
-        Action   = ["polly:SynthesizeSpeech"]
-        Resource = "*"
-      },
-      {
-        Sid    = "TranscribeAccess"
-        Effect = "Allow"
-        Action = [
-          "transcribe:StartTranscriptionJob",
-          "transcribe:GetTranscriptionJob",
-        ]
-        Resource = "*"
-      },
-    ]
-  })
-}
+# ECS 関連ロール（ecs_execution, ecs_task）および ECS セキュリティグループは
+# AgentCore Runtime への移行により削除済み。
+# AgentCore Runtime 用 IAM ロールは agentcore.tf を参照。
 
 # ─── Lambda Execution Role ────────────────────────────────────────────────────
 resource "aws_iam_role" "lambda" {
@@ -171,21 +64,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Resource = aws_dynamodb_table.file_analysis.arn
       },
       {
-        Sid    = "ECSRunTask"
-        Effect = "Allow"
-        Action = ["ecs:RunTask"]
-        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.project_name}-agent:*"
-      },
-      {
-        Sid    = "PassRoleToECS"
-        Effect = "Allow"
-        Action = ["iam:PassRole"]
-        Resource = [
-          aws_iam_role.ecs_execution.arn,
-          aws_iam_role.ecs_task.arn,
-        ]
-      },
-      {
         Sid    = "ChatDynamoDBAccess"
         Effect = "Allow"
         Action = [
@@ -195,6 +73,34 @@ resource "aws_iam_role_policy" "lambda_policy" {
         ]
         Resource = aws_dynamodb_table.chat_sessions.arn
       },
+      # create_task Lambda: SQS にメッセージを送信
+      {
+        Sid      = "SQSSendMessage"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage"]
+        Resource = aws_sqs_queue.task_queue.arn
+      },
+      # runner_lambda: SQS からメッセージを受信・削除
+      {
+        Sid    = "SQSReceive"
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+        ]
+        Resource = [
+          aws_sqs_queue.task_queue.arn,
+          aws_sqs_queue.task_dlq.arn,
+        ]
+      },
+      # runner_lambda: AgentCore Runtime を呼び出す
+      {
+        Sid      = "AgentCoreInvoke"
+        Effect   = "Allow"
+        Action   = ["bedrock-agentcore:InvokeAgentRuntime"]
+        Resource = "*"
+      },
       {
         Sid      = "BedrockConverse"
         Effect   = "Allow"
@@ -203,31 +109,4 @@ resource "aws_iam_role_policy" "lambda_policy" {
       },
     ]
   })
-}
-
-# ─── Security Group for ECS Fargate tasks ─────────────────────────────────────
-resource "aws_security_group" "ecs_tasks" {
-  name        = "${var.project_name}-ecs-tasks"
-  description = "Allow outbound HTTPS for ECS Fargate tasks"
-  vpc_id      = aws_vpc.main.id
-
-  egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS outbound"
-  }
-
-  egress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP outbound"
-  }
-
-  tags = {
-    Project = var.project_name
-  }
 }

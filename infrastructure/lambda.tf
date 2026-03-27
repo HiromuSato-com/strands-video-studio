@@ -51,6 +51,12 @@ data "archive_file" "delete_file" {
   output_path = "${path.module}/.lambda_zips/delete_file.zip"
 }
 
+data "archive_file" "runner_lambda" {
+  type        = "zip"
+  source_file = "${local.lambda_src_dir}/runner_lambda.py"
+  output_path = "${path.module}/.lambda_zips/runner_lambda.zip"
+}
+
 
 # ─── Lambda functions ─────────────────────────────────────────────────────────
 resource "aws_lambda_function" "upload_url" {
@@ -80,13 +86,9 @@ resource "aws_lambda_function" "create_task" {
 
   environment {
     variables = merge(local.lambda_common_env, {
-      ECS_CLUSTER           = aws_ecs_cluster.main.name
-      ECS_TASK_DEFINITION   = aws_ecs_task_definition.agent.arn
-      ECS_SUBNET_IDS        = join(",", aws_subnet.public[*].id)
-      ECS_SECURITY_GROUP_ID = aws_security_group.ecs_tasks.id
-      CONTAINER_NAME        = "video-edit-agent"
-      NOVA_REEL_S3_BUCKET   = data.aws_s3_bucket.nova_reel_output.bucket
-      TAVILY_API_KEY        = var.tavily_api_key
+      SQS_QUEUE_URL       = aws_sqs_queue.task_queue.url
+      NOVA_REEL_S3_BUCKET = data.aws_s3_bucket.nova_reel_output.bucket
+      TAVILY_API_KEY      = var.tavily_api_key
     })
   }
 
@@ -169,9 +171,9 @@ resource "aws_lambda_function" "chat" {
 
   environment {
     variables = merge(local.lambda_common_env, {
-      CHAT_TABLE      = aws_dynamodb_table.chat_sessions.name
-      ANALYSIS_TABLE  = aws_dynamodb_table.file_analysis.name
-      BEDROCK_REGION  = "us-east-1"
+      CHAT_TABLE     = aws_dynamodb_table.chat_sessions.name
+      ANALYSIS_TABLE = aws_dynamodb_table.file_analysis.name
+      BEDROCK_REGION = "us-east-1"
     })
   }
 
@@ -245,3 +247,34 @@ resource "aws_lambda_permission" "delete_file" {
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
 
+# ─── Runner Lambda (SQS → AgentCore Runtime) ──────────────────────────────────
+# SQS からタスクを受け取り、AgentCore Runtime を同期呼び出しする。
+# timeout は最大の 900 秒（Lambda 上限）に設定。
+resource "aws_lambda_function" "runner" {
+  function_name    = "${var.project_name}-runner"
+  role             = aws_iam_role.lambda.arn
+  handler          = "runner_lambda.handler"
+  runtime          = "python3.13"
+  filename         = data.archive_file.runner_lambda.output_path
+  source_code_hash = data.archive_file.runner_lambda.output_base64sha256
+  timeout          = 900
+  memory_size      = 256
+
+  environment {
+    variables = {
+      AGENTCORE_RUNTIME_ARN = var.agentcore_runtime_arn
+      AGENTCORE_REGION      = "us-east-1"
+      DYNAMODB_TABLE        = aws_dynamodb_table.tasks.name
+    }
+  }
+
+  tags = { Project = var.project_name }
+}
+
+# SQS → runner Lambda のトリガー
+resource "aws_lambda_event_source_mapping" "runner_sqs" {
+  event_source_arn = aws_sqs_queue.task_queue.arn
+  function_name    = aws_lambda_function.runner.arn
+  batch_size       = 1      # 1 タスクずつ処理（タイムアウト防止）
+  enabled          = var.agentcore_runtime_arn != ""  # ARN が設定されてから有効化
+}
