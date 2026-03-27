@@ -1,16 +1,12 @@
 # video-edit-by-strands-agents
 
-AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × AWS ECS Fargate
+AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × AgentCore Runtime
 
 ## UIはこんな感じです
 
 ![UI スクリーンショット](docs/images/ui-screenshot.png)
 
 ## 生成動画サンプル
-
-**Luma AI Ray 2** — 不死鳥が東京タワーのてっぺんを舞う
-
-[▶ ダウンロード / 再生](docs/videos/ray2_generated.mp4)
 
 **Amazon Nova Reel** — 夕焼けの富士山
 
@@ -30,18 +26,16 @@ AI 動画編集・動画生成アプリ — Strands Agents × Amazon Bedrock × 
   │
   └─ API Gateway (HTTP API v2)
        ├─ GET    /upload-url       → Lambda → S3 Presigned PUT URL
-       ├─ POST   /tasks            → Lambda → ECS Fargate RunTask
+       ├─ POST   /tasks            → Lambda → SQS → runner Lambda → AgentCore Runtime
        ├─ GET    /tasks/{id}       → Lambda → DynamoDB (ステータスポーリング)
        ├─ GET    /download-url/{id}→ Lambda → S3 Presigned GET URL
        ├─ POST   /chat             → Lambda → DynamoDB (チャット履歴管理)
        └─ DELETE /files            → Lambda → S3 入力ファイル削除
 
-ECS Fargate (Strands Agent)
+AgentCore Runtime (Strands Agent, us-east-1)
   ├─ Strands Agent + BedrockModel (Claude Sonnet 4.6, us-east-1)
   ├─ MoviePy + ffmpeg による動画編集（trim / concat / add_text / fade 等 20種類）
   ├─ Claude Vision による動画フレーム分析 / Amazon Transcribe による音声テキスト化
-  ├─ Luma AI Ray 2 (us-west-2) による AI 動画生成（テキスト→動画・画像→動画）
-  │    └─ Oregon S3 (luma-output) → Tokyo S3 (assets) にクロスリージョン転送
   ├─ Amazon Nova Reel (us-east-1) による AI 動画生成
   │    └─ N.Virginia S3 (nova-reel-output) → Tokyo S3 (assets) にクロスリージョン転送
   ├─ Amazon Nova Canvas (us-east-1) による AI 画像生成
@@ -59,8 +53,6 @@ DynamoDB テーブル構成
 S3 バケット構成
   ├─ video-edit-assets-{account}               (ap-northeast-1) — 入出力ファイル・最終動画
   ├─ video-edit-frontend-{account}             (ap-northeast-1) — React 静的ファイル
-  ├─ bedrock-video-generation-us-west-2-{id}   (us-west-2)      — Luma AI 生成中間ファイル
-  │    ※ Bedrock コンソールで Luma AI Ray 2 を有効化した際に AWS が自動作成
   └─ bedrock-video-generation-us-east-1-{id}   (us-east-1)      — Nova Reel 生成中間ファイル
        ※ Bedrock コンソールで Amazon Nova Reel を有効化した際に AWS が自動作成
 ```
@@ -72,14 +64,10 @@ S3 バケット構成
 - Node.js >= 20（フロントエンドビルド）
 - Amazon Bedrock で以下のモデルを有効化済み:
   - `us.anthropic.claude-sonnet-4-6` — **us-east-1**（LLM エージェント）
-  - `luma.ray-v2:0` — **us-west-2**（AI 動画生成 / Luma AI Ray 2）
-    > Bedrock コンソール (us-west-2) で有効化する際、S3 バケットの作成を求めるダイアログが表示されます。
-    > 「確認」をクリックして AWS が自動作成するバケット（`bedrock-video-generation-us-west-2-{id}`）をそのまま使用します。
-    > 作成されたバケット名を `infrastructure/variables.tf` の `luma_s3_bucket_name` に設定してください。
   - `amazon.nova-reel-v1:0` — **us-east-1**（AI 動画生成 / Amazon Nova Reel）
-    > Bedrock コンソール (us-east-1) で有効化する際、同様に S3 バケットの作成を求めるダイアログが表示されます。
+    > Bedrock コンソール (us-east-1) で有効化する際、S3 バケットの作成を求めるダイアログが表示されます。
     > 「確認」をクリックして AWS が自動作成するバケット（`bedrock-video-generation-us-east-1-{id}`）をそのまま使用します。
-    > 作成されたバケット名を `infrastructure/variables.tf` の `nova_reel_s3_bucket_name` に設定してください。
+    > 作成されたバケット名を `infrastructure/terraform.tfvars` の `nova_reel_s3_bucket_name` に設定してください。
 
 ## デプロイ手順
 
@@ -95,44 +83,39 @@ terraform init
 terraform apply
 ```
 
-VPC・サブネット・S3 バケット（Tokyo）・IAM・Lambda・ECS・CloudFront が自動作成されます。
-Luma AI / Nova Reel の出力バケットは Bedrock コンソールで各モデルを有効化した際に AWS が自動作成します。
-バケット名を `variables.tf` の `luma_s3_bucket_name` / `nova_reel_s3_bucket_name` に設定してから `apply` を実行してください。
+S3 バケット（Tokyo）・IAM・Lambda・SQS・ECR・CloudFront が自動作成されます。
+Nova Reel の出力バケットは Bedrock コンソールでモデルを有効化した際に AWS が自動作成します。
+バケット名を `terraform.tfvars` の `nova_reel_s3_bucket_name` に設定してから `apply` を実行してください。
 
 `terraform output` で以下の値を確認する：
 
 | Output | 用途 |
 |--------|------|
-| `ecr_repository_url` | Docker イメージのプッシュ先 |
+| `ecr_repository_url` | Docker イメージのプッシュ先（ap-northeast-1） |
+| `ecr_repository_url_useast1` | AgentCore 用 Docker イメージのプッシュ先（us-east-1） |
 | `api_url` | フロントエンドの `VITE_API_URL` |
 | `frontend_url` | アプリの公開 URL |
 | `s3_bucket` | アセット S3 バケット名（ap-northeast-1） |
-| `luma_output_bucket` | Luma AI 出力バケット名（us-west-2） |
 | `nova_reel_output_bucket` | Nova Reel 出力バケット名（us-east-1） |
-| `vpc_id` | 作成された VPC の ID |
-| `public_subnet_ids` | Fargate タスク用パブリックサブネット ID |
+| `sqs_task_queue_url` | SQS タスクキュー URL |
+| `agentcore_runtime_role_arn` | AgentCore Runtime 用 IAM ロール ARN |
 
 ---
 
-### 2. Fargate エージェントイメージをビルド & プッシュ
+### 2. AgentCore エージェントイメージをビルド & デプロイ
 
 ```bash
-ECR_URL=$(terraform -chdir=infrastructure output -raw ecr_repository_url)
-AWS_REGION=ap-northeast-1
-AWS_PROFILE=<your-profile>
-
-aws ecr get-login-password --region $AWS_REGION --profile $AWS_PROFILE \
-  | docker login --username AWS --password-stdin $ECR_URL
-
-# プロキシ環境の場合は --build-arg でプロキシを無効化
-docker build \
-  --build-arg http_proxy="" --build-arg https_proxy="" \
-  --build-arg HTTP_PROXY="" --build-arg HTTPS_PROXY="" \
-  -t video-edit-agent ./backend/agent
-
-docker tag video-edit-agent:latest $ECR_URL:latest
-docker push $ECR_URL:latest
+# ワンコマンドで ECR push → AgentCore Runtime 作成/更新 → Terraform apply
+./scripts/deploy-agentcore.sh
+# AWS_PROFILE=<profile> ./scripts/deploy-agentcore.sh  # プロファイル指定
 ```
+
+内部で以下を実行します：
+1. Terraform outputs から ECR URL・IAM ロール ARN を取得
+2. ARM64 コンテナイメージをビルド
+3. ECR (us-east-1) にプッシュ
+4. AgentCore Runtime を作成または更新
+5. ARN を `terraform.tfvars` に書き込み → `terraform apply`
 
 ---
 
@@ -170,10 +153,10 @@ aws s3 sync dist/ s3://$FRONTEND_BUCKET/ \
 3. 自然言語で創作指示を入力
    - **直接入力**: サンプルプロンプトをクリックしてワンタップで入力も可能
    - **AI チャットモード**: セグメントコントロールで「AIと相談しながら作成」に切替し、対話で指示を整理→確定すると指示欄に反映
-4. 右カラムの AI 動画生成モデルを選択（Luma AI Ray 2 / Amazon Nova Reel / 使用しない）
+4. 右カラムの AI 動画生成モデルを選択（Amazon Nova Reel / 使用しない）
    - 選択するとモデルの特徴が直下に表示される
 5. 「創作を開始」をクリック（指示未入力の場合はボタンが無効）
-6. Fargate でエージェントが起動し、処理が完了するとプレビューとダウンロードが表示される
+6. AgentCore Runtime でエージェントが起動し、処理が完了するとプレビューとダウンロードが表示される
 
 ### 指示例（動画編集）
 
@@ -244,20 +227,9 @@ video1.mp4 と video2.mp4 を結合して
 
 | ツール | 機能 |
 |--------|------|
-| `generate_video` | テキストから動画生成（Luma AI Ray 2、5s/9s、720p/540p） |
 | `generate_video_nova_reel` | テキストから動画生成（Amazon Nova Reel、最大6s、1280×720固定） |
-| `generate_video_from_image` | 画像→動画生成（Luma AI Ray 2 image-to-video） |
 | `generate_image` | テキストから画像生成（Amazon Nova Canvas、PNG） |
 | `generate_speech` | テキスト音声合成（Amazon Polly、MP3） |
-
-### generate_video パラメータ（Luma AI Ray 2）
-
-| パラメータ | 説明 | デフォルト |
-|-----------|------|-----------|
-| `prompt` | 生成する動画の説明（最大 5000 文字） | — |
-| `duration` | 長さ: `"5s"` または `"9s"` | `"5s"` |
-| `aspect_ratio` | アスペクト比: `"16:9"`, `"9:16"`, `"1:1"` など | `"16:9"` |
-| `resolution` | 解像度: `"720p"` または `"540p"` | `"720p"` |
 
 ### generate_video_nova_reel パラメータ（Amazon Nova Reel）
 
