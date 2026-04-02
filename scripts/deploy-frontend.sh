@@ -44,19 +44,39 @@ fi
 
 ok "bucket=${FRONTEND_BUCKET}  cf=${CF_DIST_ID}"
 
-# ── 2. フロントエンドビルド ───────────────────────────────
+# ── 2. VITE_API_URL を terraform output から自動設定 ─────
+log "VITE_API_URL を取得中..."
+cd "$INFRA_DIR"
+VITE_API_URL=$(terraform output -raw vite_api_url 2>/dev/null || echo "")
+if [ -z "$VITE_API_URL" ]; then
+  err "terraform output vite_api_url が取得できません。terraform apply 済みか確認してください。"
+fi
+ok "VITE_API_URL=${VITE_API_URL}"
+
+# frontend/.env を更新（VITE_API_URL の行だけ差し替え、他の変数は保持）
+ENV_FILE="$FRONTEND_DIR/.env"
+if [ -f "$ENV_FILE" ] && grep -q "^VITE_API_URL=" "$ENV_FILE"; then
+  # 既存の行を置換
+  sed -i "s|^VITE_API_URL=.*|VITE_API_URL=${VITE_API_URL}|" "$ENV_FILE"
+else
+  # 新規追加
+  echo "VITE_API_URL=${VITE_API_URL}" >> "$ENV_FILE"
+fi
+ok "frontend/.env を更新しました"
+
+# ── 3. フロントエンドビルド ───────────────────────────────
 log "npm run build..."
 cd "$FRONTEND_DIR"
 npm run build --no-proxy
 ok "ビルド完了"
 
-# ── 3. S3 sync ───────────────────────────────────────────
+# ── 4. S3 sync ───────────────────────────────────────────
 log "S3 に sync 中..."
 aws s3 sync "$FRONTEND_DIR/dist/" "s3://${FRONTEND_BUCKET}/" \
   --profile "$AWS_PROFILE"
 ok "S3 sync 完了"
 
-# ── 4. CloudFront invalidation ────────────────────────────
+# ── 5. CloudFront invalidation ────────────────────────────
 log "CloudFront キャッシュを削除中..."
 MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation \
   --distribution-id "$CF_DIST_ID" \
