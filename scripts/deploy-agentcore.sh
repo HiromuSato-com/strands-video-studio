@@ -104,31 +104,12 @@ log "Step 5: AgentCore Runtime を作成/更新中..."
 
 ARTIFACT_JSON=$(python -c "import json,sys; print(json.dumps({'containerConfiguration': {'containerUri': sys.argv[1]}}))" "${ECR_URL}:latest")
 
-# 既存の Runtime を検索
-EXISTING_ARN=$(
-  aws bedrock-agentcore-control list-agent-runtimes \
-    --region "${AGENTCORE_REGION}" \
-    ${PROFILE_FLAG} \
-    --query "agentRuntimes[?agentRuntimeName=='${RUNTIME_NAME}'].agentRuntimeArn" \
-    --output text 2>/dev/null || echo ""
-)
+# terraform.tfvars から既存の Runtime ARN を読み取る（あれば update、なければ create）
+EXISTING_ARN=$(grep -E '^agentcore_runtime_arn' "${INFRA_DIR}/terraform.tfvars" 2>/dev/null \
+  | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d '[:space:]' || echo "")
 
-if [[ -z "${EXISTING_ARN}" || "${EXISTING_ARN}" == "None" ]]; then
-  log "  新規作成: ${RUNTIME_NAME}"
-  RESPONSE=$(
-    aws bedrock-agentcore-control create-agent-runtime \
-      --region "${AGENTCORE_REGION}" \
-      ${PROFILE_FLAG} \
-      --agent-runtime-name "${RUNTIME_NAME}" \
-      --agent-runtime-artifact "${ARTIFACT_JSON}" \
-      --role-arn "${AGENTCORE_ROLE_ARN}" \
-      --network-configuration '{"networkMode": "PUBLIC"}' \
-      --lifecycle-configuration '{"idleRuntimeSessionTimeout": 900, "maxLifetime": 28800}' \
-      --output json
-  )
-  RUNTIME_ARN=$(echo "${RESPONSE}" | python -c "import json,sys; print(json.load(sys.stdin).get('agentRuntimeArn',''))")
-else
-  log "  更新: ${EXISTING_ARN}"
+if [[ -n "${EXISTING_ARN}" && "${EXISTING_ARN}" != '""' ]]; then
+  log "  更新（既存 ARN を使用）: ${EXISTING_ARN}"
   RUNTIME_ID="${EXISTING_ARN##*/}"
   RUNTIME_ID="${RUNTIME_ID%%:*}"
   aws bedrock-agentcore-control update-agent-runtime \
@@ -138,6 +119,22 @@ else
     --agent-runtime-artifact "${ARTIFACT_JSON}" \
     --output json > /dev/null
   RUNTIME_ARN="${EXISTING_ARN}"
+else
+  # 新規作成: agentRuntimeName はアルファベット・数字・アンダースコアのみ許可（ハイフン不可）
+  SAFE_RUNTIME_NAME="${RUNTIME_NAME//-/_}"
+  log "  新規作成: ${SAFE_RUNTIME_NAME}"
+  RESPONSE=$(
+    aws bedrock-agentcore-control create-agent-runtime \
+      --region "${AGENTCORE_REGION}" \
+      ${PROFILE_FLAG} \
+      --agent-runtime-name "${SAFE_RUNTIME_NAME}" \
+      --agent-runtime-artifact "${ARTIFACT_JSON}" \
+      --role-arn "${AGENTCORE_ROLE_ARN}" \
+      --network-configuration '{"networkMode": "PUBLIC"}' \
+      --lifecycle-configuration '{"idleRuntimeSessionTimeout": 900, "maxLifetime": 28800}' \
+      --output json
+  )
+  RUNTIME_ARN=$(echo "${RESPONSE}" | python -c "import json,sys; print(json.load(sys.stdin).get('agentRuntimeArn',''))")
 fi
 
 [[ -z "${RUNTIME_ARN}" || "${RUNTIME_ARN}" == "null" ]] \
