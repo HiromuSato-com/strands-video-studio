@@ -3,9 +3,24 @@ output "frontend_url" {
   value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
 }
 
+output "vite_api_url" {
+  description = "VITE_API_URL に設定する値（frontend/.env に記載）。CloudFront 経由で /api/* を API Gateway に転送する。"
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}/api"
+}
+
 output "api_url" {
-  description = "API Gateway URL"
+  description = "API Gateway の直接 URL（デバッグ用）。通常は vite_api_url を使う。"
   value       = aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID（deploy-frontend.sh で使用）"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "frontend_bucket" {
+  description = "フロントエンド S3 バケット名（deploy-frontend.sh で使用）"
+  value       = aws_s3_bucket.frontend.bucket
 }
 
 output "s3_bucket" {
