@@ -52,14 +52,16 @@ tf_output() {
 # Step 1: Terraform outputs を取得
 # =============================================================================
 log "Step 1: Terraform outputs を取得中..."
-ECR_URL="$(tf_output ecr_repository_url)"
+# AgentCore Runtime は us-east-1 で動作するため us-east-1 の ECR を使用する
+# （ap-northeast-1 の ECR を使うと IAM 権限エラーでコンテナが起動しない）
+ECR_URL="$(tf_output ecr_repository_url_useast1)"
 AGENTCORE_ROLE_ARN="$(tf_output agentcore_runtime_role_arn)"
 
-[[ -z "${ECR_URL}" ]]              && err "ecr_repository_url が取得できません。terraform apply を先に実行してください。"
+[[ -z "${ECR_URL}" ]]              && err "ecr_repository_url_useast1 が取得できません。terraform apply を先に実行してください。"
 [[ -z "${AGENTCORE_ROLE_ARN}" ]]   && err "agentcore_runtime_role_arn が取得できません。terraform apply を先に実行してください。"
 
-log "  ECR URL           : ${ECR_URL}"
-log "  AgentCore Role ARN: ${AGENTCORE_ROLE_ARN}"
+log "  ECR URL (us-east-1): ${ECR_URL}"
+log "  AgentCore Role ARN : ${AGENTCORE_ROLE_ARN}"
 
 # ECR レジストリ（URL から <account>.dkr.ecr.<region>.amazonaws.com を抽出）
 ECR_REGISTRY="${ECR_URL%%/*}"
