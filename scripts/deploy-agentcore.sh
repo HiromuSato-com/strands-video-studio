@@ -102,9 +102,7 @@ log "  プッシュ完了: ${ECR_URL}:latest"
 # =============================================================================
 log "Step 5: AgentCore Runtime を作成/更新中..."
 
-ARTIFACT_JSON=$(jq -n \
-  --arg uri "${ECR_URL}:latest" \
-  '{"containerConfiguration": {"containerUri": $uri}}')
+ARTIFACT_JSON=$(python -c "import json,sys; print(json.dumps({'containerConfiguration': {'containerUri': sys.argv[1]}}))" "${ECR_URL}:latest")
 
 # 既存の Runtime を検索
 EXISTING_ARN=$(
@@ -128,7 +126,7 @@ if [[ -z "${EXISTING_ARN}" || "${EXISTING_ARN}" == "None" ]]; then
       --lifecycle-configuration '{"idleRuntimeSessionTimeout": 900, "maxLifetime": 28800}' \
       --output json
   )
-  RUNTIME_ARN=$(echo "${RESPONSE}" | jq -r '.agentRuntimeArn')
+  RUNTIME_ARN=$(echo "${RESPONSE}" | python -c "import json,sys; print(json.load(sys.stdin).get('agentRuntimeArn',''))")
 else
   log "  更新: ${EXISTING_ARN}"
   RUNTIME_ID="${EXISTING_ARN##*/}"
