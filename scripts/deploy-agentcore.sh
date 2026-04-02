@@ -117,6 +117,8 @@ if [[ -n "${EXISTING_ARN}" && "${EXISTING_ARN}" != '""' ]]; then
     ${PROFILE_FLAG} \
     --agent-runtime-id "${RUNTIME_ID}" \
     --agent-runtime-artifact "${ARTIFACT_JSON}" \
+    --role-arn "${AGENTCORE_ROLE_ARN}" \
+    --network-configuration '{"networkMode": "PUBLIC"}' \
     --output json > /dev/null
   RUNTIME_ARN="${EXISTING_ARN}"
 else
