@@ -2,12 +2,9 @@ resource "aws_apigatewayv2_api" "main" {
   name          = "${var.project_name}-api"
   protocol_type = "HTTP"
 
-  cors_configuration {
-    allow_headers = ["Content-Type", "Authorization"]
-    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
-    allow_origins = ["*"]
-    max_age       = 300
-  }
+  # CORS は CloudFront 経由のアクセスに統一したため不要（同一オリジンになる）。
+  # ブラウザは https://<cloudfront>/api/* を呼び出し → CloudFront が API Gateway に転送。
+  # ブラウザ視点では同一オリジンのため preflight が発生せず、API Gateway 側の CORS 設定は不要。
 
   tags = { Project = var.project_name }
 }
@@ -52,25 +49,25 @@ resource "aws_apigatewayv2_integration" "download_url" {
 # ─── Routes ───────────────────────────────────────────────────────────────────
 resource "aws_apigatewayv2_route" "upload_url" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "GET /upload-url"
+  route_key = "GET /api/upload-url"
   target    = "integrations/${aws_apigatewayv2_integration.upload_url.id}"
 }
 
 resource "aws_apigatewayv2_route" "create_task" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "POST /tasks"
+  route_key = "POST /api/tasks"
   target    = "integrations/${aws_apigatewayv2_integration.create_task.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_task" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "GET /tasks/{id}"
+  route_key = "GET /api/tasks/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.get_task.id}"
 }
 
 resource "aws_apigatewayv2_route" "download_url" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "GET /download-url/{id}"
+  route_key = "GET /api/download-url/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.download_url.id}"
 }
 
@@ -83,7 +80,7 @@ resource "aws_apigatewayv2_integration" "chat" {
 
 resource "aws_apigatewayv2_route" "chat" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "POST /chat"
+  route_key = "POST /api/chat"
   target    = "integrations/${aws_apigatewayv2_integration.chat.id}"
 }
 
@@ -96,7 +93,7 @@ resource "aws_apigatewayv2_integration" "delete_file" {
 
 resource "aws_apigatewayv2_route" "delete_file" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "DELETE /files"
+  route_key = "DELETE /api/files"
   target    = "integrations/${aws_apigatewayv2_integration.delete_file.id}"
 }
 

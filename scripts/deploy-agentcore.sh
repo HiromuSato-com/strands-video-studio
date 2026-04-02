@@ -52,14 +52,16 @@ tf_output() {
 # Step 1: Terraform outputs を取得
 # =============================================================================
 log "Step 1: Terraform outputs を取得中..."
-ECR_URL="$(tf_output ecr_repository_url)"
+# AgentCore Runtime は us-east-1 で動作するため us-east-1 の ECR を使用する
+# （ap-northeast-1 の ECR を使うと IAM 権限エラーでコンテナが起動しない）
+ECR_URL="$(tf_output ecr_repository_url_useast1)"
 AGENTCORE_ROLE_ARN="$(tf_output agentcore_runtime_role_arn)"
 
-[[ -z "${ECR_URL}" ]]              && err "ecr_repository_url が取得できません。terraform apply を先に実行してください。"
+[[ -z "${ECR_URL}" ]]              && err "ecr_repository_url_useast1 が取得できません。terraform apply を先に実行してください。"
 [[ -z "${AGENTCORE_ROLE_ARN}" ]]   && err "agentcore_runtime_role_arn が取得できません。terraform apply を先に実行してください。"
 
-log "  ECR URL           : ${ECR_URL}"
-log "  AgentCore Role ARN: ${AGENTCORE_ROLE_ARN}"
+log "  ECR URL (us-east-1): ${ECR_URL}"
+log "  AgentCore Role ARN : ${AGENTCORE_ROLE_ARN}"
 
 # ECR レジストリ（URL から <account>.dkr.ecr.<region>.amazonaws.com を抽出）
 ECR_REGISTRY="${ECR_URL%%/*}"
@@ -100,35 +102,14 @@ log "  プッシュ完了: ${ECR_URL}:latest"
 # =============================================================================
 log "Step 5: AgentCore Runtime を作成/更新中..."
 
-ARTIFACT_JSON=$(jq -n \
-  --arg uri "${ECR_URL}:latest" \
-  '{"containerConfiguration": {"containerUri": $uri}}')
+ARTIFACT_JSON=$(python -c "import json,sys; print(json.dumps({'containerConfiguration': {'containerUri': sys.argv[1]}}))" "${ECR_URL}:latest")
 
-# 既存の Runtime を検索
-EXISTING_ARN=$(
-  aws bedrock-agentcore-control list-agent-runtimes \
-    --region "${AGENTCORE_REGION}" \
-    ${PROFILE_FLAG} \
-    --query "agentRuntimes[?agentRuntimeName=='${RUNTIME_NAME}'].agentRuntimeArn" \
-    --output text 2>/dev/null || echo ""
-)
+# terraform.tfvars から既存の Runtime ARN を読み取る（あれば update、なければ create）
+EXISTING_ARN=$(grep -E '^agentcore_runtime_arn' "${INFRA_DIR}/terraform.tfvars" 2>/dev/null \
+  | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d '[:space:]' || echo "")
 
-if [[ -z "${EXISTING_ARN}" || "${EXISTING_ARN}" == "None" ]]; then
-  log "  新規作成: ${RUNTIME_NAME}"
-  RESPONSE=$(
-    aws bedrock-agentcore-control create-agent-runtime \
-      --region "${AGENTCORE_REGION}" \
-      ${PROFILE_FLAG} \
-      --agent-runtime-name "${RUNTIME_NAME}" \
-      --agent-runtime-artifact "${ARTIFACT_JSON}" \
-      --role-arn "${AGENTCORE_ROLE_ARN}" \
-      --network-configuration '{"networkMode": "PUBLIC"}' \
-      --lifecycle-configuration '{"idleRuntimeSessionTimeout": 900, "maxLifetime": 28800}' \
-      --output json
-  )
-  RUNTIME_ARN=$(echo "${RESPONSE}" | jq -r '.agentRuntimeArn')
-else
-  log "  更新: ${EXISTING_ARN}"
+if [[ -n "${EXISTING_ARN}" && "${EXISTING_ARN}" != '""' ]]; then
+  log "  更新（既存 ARN を使用）: ${EXISTING_ARN}"
   RUNTIME_ID="${EXISTING_ARN##*/}"
   RUNTIME_ID="${RUNTIME_ID%%:*}"
   aws bedrock-agentcore-control update-agent-runtime \
@@ -136,8 +117,26 @@ else
     ${PROFILE_FLAG} \
     --agent-runtime-id "${RUNTIME_ID}" \
     --agent-runtime-artifact "${ARTIFACT_JSON}" \
+    --role-arn "${AGENTCORE_ROLE_ARN}" \
+    --network-configuration '{"networkMode": "PUBLIC"}' \
     --output json > /dev/null
   RUNTIME_ARN="${EXISTING_ARN}"
+else
+  # 新規作成: agentRuntimeName はアルファベット・数字・アンダースコアのみ許可（ハイフン不可）
+  SAFE_RUNTIME_NAME="${RUNTIME_NAME//-/_}"
+  log "  新規作成: ${SAFE_RUNTIME_NAME}"
+  RESPONSE=$(
+    aws bedrock-agentcore-control create-agent-runtime \
+      --region "${AGENTCORE_REGION}" \
+      ${PROFILE_FLAG} \
+      --agent-runtime-name "${SAFE_RUNTIME_NAME}" \
+      --agent-runtime-artifact "${ARTIFACT_JSON}" \
+      --role-arn "${AGENTCORE_ROLE_ARN}" \
+      --network-configuration '{"networkMode": "PUBLIC"}' \
+      --lifecycle-configuration '{"idleRuntimeSessionTimeout": 900, "maxLifetime": 28800}' \
+      --output json
+  )
+  RUNTIME_ARN=$(echo "${RESPONSE}" | python -c "import json,sys; print(json.load(sys.stdin).get('agentRuntimeArn',''))")
 fi
 
 [[ -z "${RUNTIME_ARN}" || "${RUNTIME_ARN}" == "null" ]] \

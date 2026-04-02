@@ -81,7 +81,9 @@ resource "aws_s3_bucket_cors_configuration" "assets" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
-    allowed_origins = ["*"]
+    # presigned URL での S3 直接アップロードは S3 ドメインへのクロスオリジンリクエストになるため
+    # CloudFront ドメインのみを許可する（ワイルドカード不要）
+    allowed_origins = ["https://${aws_cloudfront_distribution.frontend.domain_name}"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }

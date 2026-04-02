@@ -64,7 +64,7 @@ def main() -> None:
         instruction += "\n[AI動画生成モデル: Amazon Nova Reel]"
     # "none": no tag appended — agent uses editing tools only
 
-    dynamodb = boto3.resource("dynamodb")
+    dynamodb = boto3.resource("dynamodb", region_name="ap-northeast-1")
     table = dynamodb.Table(dynamodb_table_name)
 
     logger.info(f"Starting task {task_id}")
