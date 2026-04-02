@@ -28,11 +28,6 @@ output "s3_bucket" {
   value       = aws_s3_bucket.assets.bucket
 }
 
-output "ecr_repository_url" {
-  description = "ECR repository URL (ap-northeast-1, for local builds)"
-  value       = aws_ecr_repository.agent.repository_url
-}
-
 output "ecr_repository_url_useast1" {
   description = "ECR repository URL (us-east-1, for AgentCore Runtime)"
   value       = aws_ecr_repository.agent_useast1.repository_url
