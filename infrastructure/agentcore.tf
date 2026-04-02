@@ -152,6 +152,7 @@ resource "aws_iam_role_policy" "agentcore_runtime_policy" {
 
 # ─── AgentCore コンテナ用 CloudWatch ロググループ ─────────────────────────────
 resource "aws_cloudwatch_log_group" "agentcore_agent" {
+  provider          = aws.useast1  # AgentCore Runtime は us-east-1 で動作するため同リージョンに作成
   name              = "/agentcore/${var.project_name}-agent"
   retention_in_days = 30
 
