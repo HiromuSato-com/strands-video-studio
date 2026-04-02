@@ -35,7 +35,10 @@ export async function uploadFileToS3(
   onProgress?: (percent: number) => void
 ): Promise<void> {
   await axios.put(presignedUrl, file, {
-    headers: { "Content-Type": file.type || "application/octet-stream" },
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "x-amz-tagging": "Lifecycle=input",
+    },
     onUploadProgress: (e) => {
       if (onProgress && e.total) {
         onProgress(Math.round((e.loaded * 100) / e.total));

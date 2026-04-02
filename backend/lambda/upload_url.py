@@ -34,7 +34,7 @@ def handler(event, context):
 
     url = s3.generate_presigned_url(
         "put_object",
-        Params={"Bucket": S3_BUCKET, "Key": key},
+        Params={"Bucket": S3_BUCKET, "Key": key, "Tagging": "Lifecycle=input"},
         ExpiresIn=3600,
     )
 

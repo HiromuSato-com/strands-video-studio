@@ -57,12 +57,34 @@ resource "aws_s3_bucket_notification" "assets" {
   depends_on = [aws_lambda_permission.analyzer_s3]
 }
 
-# 入力ファイルの自動クリーンアップ（7日後）
+# ファイル自動クリーンアップ
+# - 入力ファイル（Lifecycle=input タグ付き）: 7日後に削除
+# - 出力ファイル・その他（タグなし）: 30日後に削除
 resource "aws_s3_bucket_lifecycle_configuration" "assets" {
   bucket = aws_s3_bucket.assets.id
 
+  # 入力ファイル: upload_url.py が presigned URL に Tagging=Lifecycle=input を付与
   rule {
     id     = "expire-input-files"
+    status = "Enabled"
+
+    filter {
+      and {
+        prefix = "tasks/"
+        tags = {
+          Lifecycle = "input"
+        }
+      }
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+
+  # 出力ファイル・中間ファイル（タグなし）: 30日後に削除
+  rule {
+    id     = "expire-output-files"
     status = "Enabled"
 
     filter {
@@ -70,7 +92,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "assets" {
     }
 
     expiration {
-      days = 7
+      days = 30
     }
   }
 }

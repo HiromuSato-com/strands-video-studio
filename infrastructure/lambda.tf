@@ -58,6 +58,29 @@ data "archive_file" "runner_lambda" {
 }
 
 
+# ─── CloudWatch Log Groups（retention 明示設定） ────────────────────────────────
+# Lambda のデフォルト retention は無期限。明示的に 14 日を設定してコストを抑制する。
+locals {
+  lambda_names = [
+    "upload-url",
+    "create-task",
+    "get-task",
+    "download-url",
+    "chat",
+    "analyzer",
+    "delete-file",
+    "runner",
+  ]
+}
+
+resource "aws_cloudwatch_log_group" "lambda" {
+  for_each          = toset(local.lambda_names)
+  name              = "/aws/lambda/${var.project_name}-${each.key}"
+  retention_in_days = 14
+
+  tags = { Project = var.project_name }
+}
+
 # ─── Lambda functions ─────────────────────────────────────────────────────────
 resource "aws_lambda_function" "upload_url" {
   function_name    = "${var.project_name}-upload-url"
