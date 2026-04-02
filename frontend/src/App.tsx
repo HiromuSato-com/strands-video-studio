@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   Paperclip, Film, ImageIcon, X, Send, Sparkles,
-  RotateCcw, Download,
+  RotateCcw, Download, Clapperboard, Bot, Scissors, MessageCircle,
 } from "lucide-react";
 import { CharacterAvatar, type CharacterState } from "./components/CharacterAvatar";
 import { VideoPreview } from "./components/VideoPreview";
@@ -58,11 +58,12 @@ function TaskProgressCard({
   task: Task;
   pollingError: string | null;
 }) {
-  const STATUS: Record<string, { label: string; color: string; pct: number }> = {
-    PENDING:   { label: "準備中...",    color: C.textMuted, pct: 10  },
-    RUNNING:   { label: "AI処理中 ⚡", color: C.accent,    pct: 60  },
-    COMPLETED: { label: "完成！🎉",     color: C.green,     pct: 100 },
-    FAILED:    { label: "エラー 😥",    color: C.red,       pct: 0   },
+  const STATUS: Record<string, { label: string; sub: string; color: string; pct: number }> = {
+    PENDING:          { label: "準備中...",              sub: "エージェントを起動しているよ🐱",              color: C.textMuted, pct: 15  },
+    RUNNING:          { label: "AI処理中 ⚡",            sub: "ムービィが一生懸命編集してるよ！少し待ってね",  color: C.accent,    pct: 60  },
+    WAITING_APPROVAL: { label: "確認待ち ⏳",            sub: "承認ダイアログを確認してね！",                 color: C.yellow,    pct: 50  },
+    COMPLETED:        { label: "完成！🎉",                sub: "右の画面で動画を確認してね✨",                color: C.green,     pct: 100 },
+    FAILED:           { label: "エラーが起きちゃった 😥", sub: "もう一度試してみてね",                        color: C.red,       pct: 0   },
   };
   const info = STATUS[task.status] ?? STATUS.PENDING;
   const SEG  = 20;
@@ -73,11 +74,9 @@ function TaskProgressCard({
       className="rounded-xl p-3 space-y-2 text-xs w-full"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-0.5">
         <span style={{ color: info.color, fontWeight: 600 }}>{info.label}</span>
-        <span className="font-mono text-[10px]" style={{ color: C.textMuted }}>
-          TASK · {task.task_id.slice(0, 8).toUpperCase()}
-        </span>
+        <span className="text-[10px]" style={{ color: C.textMuted }}>{info.sub}</span>
       </div>
       {task.status !== "FAILED" && (
         <div className="flex gap-0.5">
@@ -118,6 +117,7 @@ export default function App() {
   const prevFilesLenRef = useRef(0);
   const [taskId,       setTaskId]       = useState<string | null>(null);
   const [downloadUrl,  setDownloadUrl]  = useState<string | null>(null);
+  const [outputKey,    setOutputKey]    = useState<string | null>(null);
   const [isDragging,   setIsDragging]   = useState(false);
 
   const [panelWidth, setPanelWidth] = useState(300);
@@ -133,7 +133,8 @@ export default function App() {
     const onMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
       const delta = e.clientX - resizeStartX.current;
-      setPanelWidth(Math.min(Math.max(200, resizeStartW.current + delta), 640));
+      const maxWidth = Math.min(640, window.innerWidth - 350);
+      setPanelWidth(Math.min(Math.max(200, resizeStartW.current + delta), maxWidth));
     };
     const onUp = () => { isResizing.current = false; };
     document.addEventListener("mousemove", onMove);
@@ -205,6 +206,7 @@ export default function App() {
       try {
         const res = await getDownloadUrl(completedTaskId);
         setDownloadUrl(res.download_url);
+        setOutputKey(res.output_key);
         setTimeline(prev => [
           ...prev,
           { id: tid(), kind: "video", url: res.download_url, key: res.output_key },
@@ -373,6 +375,7 @@ export default function App() {
     setStep("idle");
     setTaskId(null);
     setDownloadUrl(null);
+    setOutputKey(null);
     setChatLoading(false);
   };
 
@@ -412,8 +415,9 @@ export default function App() {
         style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(8,4,18,0.90)" }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-base font-bold" style={{ color: C.accent }}>
-            🎬 ムービィ AI Studio
+          <span className="flex items-center gap-2 text-base font-bold" style={{ color: C.accent }}>
+            <Clapperboard size={18} strokeWidth={1.8} />
+            ムービィ AI Studio
           </span>
           <span className="text-[10px] hidden sm:block" style={{ color: C.textMuted }}>
             Strands Agents · Claude Sonnet · Bedrock
@@ -460,9 +464,9 @@ export default function App() {
                     >
                       {item.role === "assistant" && (
                         <div
-                          className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
+                          className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center"
                           style={{ background: "rgba(124,58,237,0.30)", border: `1px solid ${C.border}` }}
-                        >🎬</div>
+                        ><Bot size={13} style={{ color: C.accent }} /></div>
                       )}
                       <div
                         className="max-w-[84%] rounded-2xl px-3 py-2 text-xs leading-relaxed"
@@ -492,18 +496,17 @@ export default function App() {
                 }
                 if (item.kind === "video") {
                   return (
-                    <div key={item.id} className="space-y-2">
-                      <VideoPreview src={item.url} />
+                    <div key={item.id} className="flex justify-center">
                       <a
                         href={item.url}
                         download={item.key.split("/").pop() ?? "output.mp4"}
                         onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
-                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
-                        style={{ background: C.accent, color: "#1A0832" }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
+                        style={{ background: "rgba(192,132,252,0.18)", border: `1px solid ${C.accent}`, color: C.accent }}
+                        onMouseEnter={e => (e.currentTarget.style.opacity = "0.75")}
                         onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
                       >
-                        <Download size={13} />ダウンロード
+                        <Download size={11} />動画をダウンロード
                       </a>
                     </div>
                   );
@@ -622,30 +625,42 @@ export default function App() {
                   title="チャット送信"
                 ><Send size={14} /></button>
 
-                {/* Model select — 1回以上やり取り後に有効 */}
-                <select
-                  value={videoModel}
-                  onChange={e => {
-                    const v = e.target.value as VideoModel;
-                    if (videoModel !== v) playSound(Snd.SOUNDS.TOGGLE_ON);
-                    setVideoModel(v);
-                  }}
-                  disabled={!hasUserMessage || isProcessing}
-                  className="flex-1 text-xs rounded-lg px-2 py-2 outline-none cursor-pointer"
-                  style={{
-                    background: "rgba(139,92,246,0.10)",
-                    border: `1px solid ${C.border}`,
-                    color: C.textSub,
-                    appearance: "none",
-                    opacity: !hasUserMessage || isProcessing ? 0.35 : 1,
-                  }}
-                  onFocus={e => (e.currentTarget.style.borderColor = C.accent)}
-                  onBlur={e => (e.currentTarget.style.borderColor = C.border)}
-                  title={!hasUserMessage ? "ムービィと1回以上やり取りしてから選べるよ" : undefined}
-                >
-                  <option value="none">🎞 編集</option>
-                  <option value="nova_reel">🤖 Nova Reel</option>
-                </select>
+                {/* Model toggle — 1回以上やり取り後に有効 */}
+                {(() => {
+                  const segDisabled = !hasUserMessage || isProcessing;
+                  return (
+                    <div
+                      className="flex-1 flex rounded-lg overflow-hidden"
+                      style={{
+                        border: `1px solid ${C.border}`,
+                        opacity: segDisabled ? 0.35 : 1,
+                        pointerEvents: segDisabled ? "none" : "auto",
+                      }}
+                      title={!hasUserMessage ? "ムービィと1回以上やり取りしてから選べるよ" : undefined}
+                    >
+                      {(["none", "nova_reel"] as VideoModel[]).map((v, i) => {
+                        const active = videoModel === v;
+                        return (
+                          <button
+                            key={v}
+                            onClick={() => { if (!active) { playSound(Snd.SOUNDS.TOGGLE_ON); setVideoModel(v); } }}
+                            className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-medium transition-all"
+                            style={{
+                              background: active ? "rgba(192,132,252,0.22)" : "rgba(139,92,246,0.07)",
+                              color: active ? C.accent : C.textMuted,
+                              borderLeft: i > 0 ? `1px solid ${C.border}` : undefined,
+                            }}
+                          >
+                            {v === "none"
+                              ? <><Scissors size={10} strokeWidth={2} />編集</>
+                              : <><Bot size={10} strokeWidth={2} />Nova Reel</>
+                            }
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* Start task — 1回以上やり取り後に有効 */}
                 {(() => {
@@ -654,7 +669,7 @@ export default function App() {
                     <button
                       onClick={handleStartTask}
                       disabled={disabled}
-                      className="flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+                      className={`flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all${!disabled ? " vtuber-btn-glow" : ""}`}
                       style={{
                         background: disabled ? "rgba(139,92,246,0.08)" : C.accent,
                         color: disabled ? C.textMuted : "#1A0832",
@@ -670,6 +685,12 @@ export default function App() {
                   );
                 })()}
               </div>
+              {/* Hint: チャット前は製作開始できない旨を案内 */}
+              {!hasUserMessage && !isProcessing && (
+                <p className="text-center text-[10px]" style={{ color: C.textMuted }}>
+                  <MessageCircle size={9} className="inline-block mr-1 opacity-60" />まずムービィに話しかけてから製作開始できるよ
+                </p>
+              )}
             </div>
 
             {/* Resize handle — invisible, hover でごく薄く */}
@@ -689,9 +710,49 @@ export default function App() {
             </div>
         </div>
 
-        {/* ─── Right: Character — fills all remaining space ─── */}
+        {/* ─── Right: Character / Video preview ─── */}
         <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-          <CharacterAvatar state={characterState} size={420} />
+          {downloadUrl ? (
+            /* 完成時: 大きな動画プレビュー */
+            <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-8">
+              <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.green }}>
+                <Sparkles size={16} strokeWidth={1.8} />完成！
+              </p>
+              <div className="w-full max-w-2xl">
+                <VideoPreview src={downloadUrl} />
+              </div>
+              <a
+                href={downloadUrl}
+                download={outputKey?.split("/").pop() ?? "output.mp4"}
+                onClick={() => playSound(Snd.SOUNDS.CELEBRATION)}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all"
+                style={{ background: C.accent, color: "#1A0832" }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+              >
+                <Download size={15} />ダウンロード
+              </a>
+            </div>
+          ) : (
+            <>
+              <CharacterAvatar state={characterState} size={420} />
+              {/* 処理中ステータスバッジ */}
+              {step === "submitted" && task && task.status !== "COMPLETED" && task.status !== "FAILED" && (
+                <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-none">
+                  <div
+                    className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium"
+                    style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.textSub }}
+                  >
+                    <div
+                      className="w-2 h-2 rounded-full animate-pulse"
+                      style={{ background: task.status === "RUNNING" ? C.accent : task.status === "WAITING_APPROVAL" ? C.yellow : C.textMuted }}
+                    />
+                    {task.status === "PENDING" ? "準備中..." : task.status === "RUNNING" ? "AI処理中..." : "確認待ち..."}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
       </div>
